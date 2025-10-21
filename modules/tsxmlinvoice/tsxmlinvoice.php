@@ -177,8 +177,26 @@ class Tsxmlinvoice extends Module
 
         $token = Tools::getAdminTokenLite('AdminOrders');
 
-        /** @var \Symfony\Component\Routing\RouterInterface $router */
-        $router = $this->context->controller->getContainer()->get('router');
+        /** @var \Symfony\Component\Routing\RouterInterface|null $router */
+        $router = null;
+
+        if (method_exists($this->context->controller, 'getContainer')) {
+            $container = $this->context->controller->getContainer();
+            if ($container && $container->has('router')) {
+                $router = $container->get('router');
+            }
+        }
+
+        if (null === $router && class_exists('\\PrestaShop\\PrestaShop\\Adapter\\SymfonyContainer')) {
+            $container = \PrestaShop\PrestaShop\Adapter\SymfonyContainer::getInstance();
+            if ($container && $container->has('router')) {
+                $router = $container->get('router');
+            }
+        }
+
+        if (null === $router) {
+            return '';
+        }
         $link = $router->generate(
             'modules_tsxmlinvoice_generate',
             [
