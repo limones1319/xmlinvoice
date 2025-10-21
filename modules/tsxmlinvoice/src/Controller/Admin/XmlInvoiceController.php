@@ -38,7 +38,7 @@ class XmlInvoiceController extends FrameworkBundleAdminController
 
         $response = new Response($xml);
         $response->headers->set('Content-Type', 'application/xml; charset=utf-8');
-        $response->headers->set('Content-Disposition', sprintf('inline; filename="%s"', $filename));
+        $response->headers->set('Content-Disposition', sprintf('attachment; filename="%s"', $filename));
 
         return $response;
     }

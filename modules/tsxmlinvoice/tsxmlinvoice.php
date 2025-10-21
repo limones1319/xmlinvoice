@@ -176,13 +176,17 @@ class Tsxmlinvoice extends Module
         }
 
         $token = Tools::getAdminTokenLite('AdminOrders');
-        $routeParams = [
-            'route' => 'modules_tsxmlinvoice_generate',
-            'id_order' => (int) $params['id_order'],
-            'token' => $token,
-        ];
 
-        $link = $this->context->link->getAdminLink('AdminModules', true, [], $routeParams);
+        /** @var \Symfony\Component\Routing\RouterInterface $router */
+        $router = $this->context->controller->getContainer()->get('router');
+        $link = $router->generate(
+            'modules_tsxmlinvoice_generate',
+            [
+                'id_order' => (int) $params['id_order'],
+                'token' => $token,
+            ],
+            \Symfony\Component\Routing\Generator\UrlGeneratorInterface::ABSOLUTE_URL
+        );
 
         $this->context->smarty->assign([
             'tsxmlinvoice_url' => $link,
