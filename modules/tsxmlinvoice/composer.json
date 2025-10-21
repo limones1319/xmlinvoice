@@ -1,0 +1,11 @@
+{
+    "name": "prestashop/tsxmlinvoice",
+    "description": "CIUS-RO XML invoice generator for PrestaShop orders",
+    "type": "prestashop-module",
+    "license": "AFL-3.0",
+    "autoload": {
+        "psr-4": {
+            "Modules\\Tsxmlinvoice\\": "src/"
+        }
+    }
+}
