@@ -1,0 +1,7 @@
+modules_tsxmlinvoice_generate:
+  path: /tsxmlinvoice/generate/{id_order}
+  methods: [GET]
+  defaults:
+    _controller: 'Modules\\Tsxmlinvoice\\Controller\\Admin\\XmlInvoiceController::generateAction'
+  requirements:
+    id_order: '\\d+'
