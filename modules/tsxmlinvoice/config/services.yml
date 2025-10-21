@@ -4,4 +4,5 @@ services:
     autoconfigure: true
     public: true
 
-  Modules\Tsxmlinvoice\Controller\Admin\XmlInvoiceController: ~
+  Modules\Tsxmlinvoice\Controller\Admin\XmlInvoiceController:
+    class: Modules\Tsxmlinvoice\Controller\Admin\XmlInvoiceController
