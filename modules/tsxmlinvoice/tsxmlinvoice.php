@@ -201,7 +201,7 @@ class Tsxmlinvoice extends Module
             'modules_tsxmlinvoice_generate',
             [
                 'id_order' => (int) $params['id_order'],
-                'token' => $token,
+                '_token' => $token,
             ],
             \Symfony\Component\Routing\Generator\UrlGeneratorInterface::ABSOLUTE_URL
         );

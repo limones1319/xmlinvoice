@@ -3,5 +3,7 @@ modules_tsxmlinvoice_generate:
   methods: [GET]
   defaults:
     _controller: 'Modules\\Tsxmlinvoice\\Controller\\Admin\\XmlInvoiceController::generateAction'
+    _legacy_controller: 'AdminOrders'
+    _legacy_link: 'AdminOrders'
   requirements:
     id_order: '\\d+'
