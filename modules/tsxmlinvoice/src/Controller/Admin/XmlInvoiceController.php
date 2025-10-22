@@ -13,20 +13,14 @@ use Order;
 use OrderInvoice;
 use PrestaShopBundle\Controller\Admin\FrameworkBundleAdminController;
 use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
-use Tools;
 use Validate;
 
 class XmlInvoiceController extends FrameworkBundleAdminController
 {
-    public function generateAction(Request $request, int $id_order)
+    public function generateAction(int $id_order)
     {
-        $token = $request->query->get('token');
-        if (!$token || $token !== Tools::getAdminTokenLite('AdminOrders')) {
-            throw new AccessDeniedHttpException('Invalid token.');
-        }
+        $this->denyAccessUnlessGranted('read', 'AdminOrders');
 
         $order = new Order($id_order);
         if (!Validate::isLoadedObject($order)) {
