@@ -175,8 +175,6 @@ class Tsxmlinvoice extends Module
             return '';
         }
 
-        $token = Tools::getAdminTokenLite('AdminOrders');
-
         /** @var \Symfony\Component\Routing\RouterInterface|null $router */
         $router = null;
 
@@ -201,7 +199,6 @@ class Tsxmlinvoice extends Module
             'modules_tsxmlinvoice_generate',
             [
                 'id_order' => (int) $params['id_order'],
-                'token' => $token,
             ],
             \Symfony\Component\Routing\Generator\UrlGeneratorInterface::ABSOLUTE_URL
         );
