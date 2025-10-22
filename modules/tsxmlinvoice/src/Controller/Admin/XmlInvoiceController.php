@@ -13,13 +13,16 @@ use Order;
 use OrderInvoice;
 use PrestaShopBundle\Controller\Admin\FrameworkBundleAdminController;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Tools;
 use Validate;
 
 class XmlInvoiceController extends FrameworkBundleAdminController
 {
     public function generateAction(int $id_order)
     {
+        $this->assertValidToken();
         $this->denyAccessUnlessGranted('read', 'AdminOrders');
 
         $order = new Order($id_order);
@@ -124,6 +127,16 @@ class XmlInvoiceController extends FrameworkBundleAdminController
         }
 
         return $doc->saveXML();
+    }
+
+    private function assertValidToken()
+    {
+        $expectedToken = Tools::getAdminTokenLite('AdminOrders');
+        $providedToken = (string) Tools::getValue('token');
+
+        if ('' === $providedToken || !hash_equals($expectedToken, $providedToken)) {
+            throw new AccessDeniedHttpException('Invalid security token.');
+        }
     }
 
     private function buildSupplierParty(DOMDocument $doc, $name, $vat, $registration, $street, $city, $postcode, $countryCode)
