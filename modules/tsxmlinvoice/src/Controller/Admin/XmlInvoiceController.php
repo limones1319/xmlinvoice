@@ -20,9 +20,16 @@ use Validate;
 
 class XmlInvoiceController extends FrameworkBundleAdminController
 {
-    public function generateAction(int $id_order)
+    public function generateAction(?int $id_order = null)
     {
         $this->assertValidToken();
+        if (null === $id_order || $id_order <= 0) {
+            $id_order = (int) Tools::getValue('id_order');
+        }
+
+        if ($id_order <= 0) {
+            throw new NotFoundHttpException('Order ID is required.');
+        }
         $this->denyAccessUnlessGranted('read', 'AdminOrders');
 
         $order = new Order($id_order);
