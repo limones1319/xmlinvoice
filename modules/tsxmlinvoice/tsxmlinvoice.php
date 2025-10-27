@@ -9,13 +9,6 @@ if (!defined('_PS_VERSION_')) {
     exit;
 }
 
-require_once __DIR__ . '/autoload.php';
-
-// Forțează încărcarea controller-ului ÎNAINTE ca Symfony să-l caute
-if (file_exists(__DIR__ . '/src/Controller/Admin/XmlInvoiceController.php')) {
-    require_once __DIR__ . '/src/Controller/Admin/XmlInvoiceController.php';
-}
-
 class Tsxmlinvoice extends Module
 {
     /** @var array */
@@ -32,7 +25,7 @@ class Tsxmlinvoice extends Module
     {
         $this->name = 'tsxmlinvoice';
         $this->tab = 'administration';
-        $this->version = '1.0.0';
+        $this->version = '1.0.1';
         $this->author = 'OpenAI';
         $this->need_instance = 0;
 
@@ -182,36 +175,35 @@ class Tsxmlinvoice extends Module
             return '';
         }
 
-        /** @var \Symfony\Component\Routing\RouterInterface|null $router */
-        $router = null;
-
-        if (method_exists($this->context->controller, 'getContainer')) {
-            $container = $this->context->controller->getContainer();
-            if ($container && $container->has('router')) {
-                $router = $container->get('router');
-            }
-        }
-
-        if (null === $router && class_exists('\\PrestaShop\\PrestaShop\\Adapter\\SymfonyContainer')) {
-            $container = \PrestaShop\PrestaShop\Adapter\SymfonyContainer::getInstance();
-            if ($container && $container->has('router')) {
-                $router = $container->get('router');
-            }
-        }
-
-        if (null === $router) {
-            return '';
-        }
         $token = Tools::getAdminTokenLite('AdminOrders');
-
-        $link = $router->generate(
-            'modules_tsxmlinvoice_generate',
-            [
-                'id_order' => (int) $params['id_order'],
-                'token' => $token,
-            ],
-            \Symfony\Component\Routing\Generator\UrlGeneratorInterface::ABSOLUTE_URL
-        );
+        
+        // Încearcă să folosești router-ul Symfony
+        $router = $this->getRouter();
+        
+        if ($router) {
+            try {
+                $link = $router->generate(
+                    'modules_tsxmlinvoice_generate',
+                    [
+                        'id_order' => (int) $params['id_order'],
+                        'token' => $token,
+                    ],
+                    \Symfony\Component\Routing\Generator\UrlGeneratorInterface::ABSOLUTE_URL
+                );
+            } catch (Exception $e) {
+                // Fallback la URL manual dacă ruta nu e găsită
+                $link = $this->context->link->getBaseLink() 
+                    . 'tsxmlinvoice/generate/' 
+                    . (int) $params['id_order'] 
+                    . '?token=' . $token;
+            }
+        } else {
+            // Fallback complet la URL manual
+            $link = $this->context->link->getBaseLink() 
+                . 'tsxmlinvoice/generate/' 
+                . (int) $params['id_order'] 
+                . '?token=' . $token;
+        }
 
         $this->context->smarty->assign([
             'tsxmlinvoice_url' => $link,
@@ -219,5 +211,32 @@ class Tsxmlinvoice extends Module
         ]);
 
         return $this->fetch('module:tsxmlinvoice/views/templates/hook/displayAdminOrder.tpl');
+    }
+
+    private function getRouter()
+    {
+        $router = null;
+
+        // Încearcă prin controller
+        if (method_exists($this->context->controller, 'getContainer')) {
+            $container = $this->context->controller->getContainer();
+            if ($container && $container->has('router')) {
+                $router = $container->get('router');
+            }
+        }
+
+        // Încearcă prin SymfonyContainer
+        if (null === $router && class_exists('\\PrestaShop\\PrestaShop\\Adapter\\SymfonyContainer')) {
+            try {
+                $container = \PrestaShop\PrestaShop\Adapter\SymfonyContainer::getInstance();
+                if ($container && $container->has('router')) {
+                    $router = $container->get('router');
+                }
+            } catch (Exception $e) {
+                $router = null;
+            }
+        }
+
+        return $router;
     }
 }
