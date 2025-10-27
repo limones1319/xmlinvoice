@@ -6,3 +6,6 @@ services:
 
   Modules\Tsxmlinvoice\Controller\Admin\XmlInvoiceController:
     class: Modules\Tsxmlinvoice\Controller\Admin\XmlInvoiceController
+
+  tsxmlinvoice.generator:
+    class: PrestaShop\Module\Tsxmlinvoice\Service\XmlInvoiceGenerator
