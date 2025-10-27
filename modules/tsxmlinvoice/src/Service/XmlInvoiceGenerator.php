@@ -14,9 +14,11 @@ use Order;
 
 class XmlInvoiceGenerator
 {
-    private const UNIT_CODE = 'H87';
+    private const UNIT_CODE = 'EA';
+    private const BASE_QUANTITY = 1.0;
     private const CUSTOMIZATION_ID = 'urn:cen.eu:en16931:2017#compliant#urn:efactura.mfinante.ro:CIUS-RO:1.0.1';
-    private const INVOICE_TYPE_CODE = '384';
+    private const PROFILE_ID = 'urn:fdc:peppol.eu:2017:poacc:billing:01:1.0';
+    private const INVOICE_TYPE_CODE = '380';
 
     private function money($amount): string
     {
@@ -48,7 +50,7 @@ class XmlInvoiceGenerator
 
     private function add(DOMDocument $doc, DOMElement $parent, string $nsPrefix, string $name, ?string $value = null, array $attrs = []): DOMElement
     {
-        $nsMap = [
+        static $nsMap = [
             '' => 'urn:oasis:names:specification:ubl:schema:xsd:Invoice-2',
             'cac' => 'urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2',
             'cbc' => 'urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2',
@@ -68,19 +70,15 @@ class XmlInvoiceGenerator
 
     private function stripChildNamespaceRedeclarations(DOMDocument $doc, DOMElement $root): void
     {
-        $xpath = new \DOMXPath($doc);
+        $allElements = $doc->getElementsByTagName('*');
 
-        foreach (['cbc', 'cac'] as $prefix) {
-            $nodes = $xpath->query('//*[@xmlns:' . $prefix . ']');
-            if (!$nodes) {
+        foreach ($allElements as $element) {
+            if ($element->isSameNode($root)) {
                 continue;
             }
 
-            foreach ($nodes as $node) {
-                if ($node !== $root) {
-                    $node->removeAttributeNS('http://www.w3.org/2000/xmlns/', $prefix);
-                }
-            }
+            $element->removeAttributeNS('http://www.w3.org/2000/xmlns/', 'cbc');
+            $element->removeAttributeNS('http://www.w3.org/2000/xmlns/', 'cac');
         }
     }
 
@@ -133,6 +131,7 @@ class XmlInvoiceGenerator
         $doc->appendChild($invoice);
 
         $this->add($doc, $invoice, 'cbc', 'CustomizationID', self::CUSTOMIZATION_ID);
+        $this->add($doc, $invoice, 'cbc', 'ProfileID', self::PROFILE_ID);
         $this->add($doc, $invoice, 'cbc', 'ID', $invoiceId);
         $this->add($doc, $invoice, 'cbc', 'IssueDate', $issueDate);
         $this->add($doc, $invoice, 'cbc', 'DueDate', $dueDate);
@@ -202,7 +201,7 @@ class XmlInvoiceGenerator
 
             $invoiceLine = $this->add($doc, $invoice, 'cac', 'InvoiceLine');
             $this->add($doc, $invoiceLine, 'cbc', 'ID', (string) $lineIdx);
-            $this->add($doc, $invoiceLine, 'cbc', 'InvoicedQuantity', $this->money($qty), ['unitCode' => self::UNIT_CODE]);
+            $this->add($doc, $invoiceLine, 'cbc', 'InvoicedQuantity', number_format($qty, 2, '.', ''), ['unitCode' => self::UNIT_CODE]);
             $this->add($doc, $invoiceLine, 'cbc', 'LineExtensionAmount', $this->money($lineNet), ['currencyID' => $docCurrency]);
 
             $item = $this->add($doc, $invoiceLine, 'cac', 'Item');
@@ -214,6 +213,7 @@ class XmlInvoiceGenerator
 
             $price = $this->add($doc, $invoiceLine, 'cac', 'Price');
             $this->add($doc, $price, 'cbc', 'PriceAmount', $this->money($unitNet), ['currencyID' => $docCurrency]);
+            $this->add($doc, $price, 'cbc', 'BaseQuantity', number_format(self::BASE_QUANTITY, 2, '.', ''), ['unitCode' => self::UNIT_CODE]);
         }
 
         $this->stripChildNamespaceRedeclarations($doc, $invoice);

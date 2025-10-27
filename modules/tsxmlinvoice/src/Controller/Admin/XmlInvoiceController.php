@@ -31,10 +31,9 @@ class XmlInvoiceController extends FrameworkBundleAdminController
 
         $filename = sprintf('invoice-%s.xml', preg_replace('/[^A-Za-z0-9_-]/', '', $order->reference));
 
-        $response = new Response($xml);
-        $response->headers->set('Content-Type', 'application/xml; charset=utf-8');
-        $response->headers->set('Content-Disposition', sprintf('attachment; filename="%s"', $filename));
-
-        return $response;
+        return new Response($xml, 200, [
+            'Content-Type' => 'application/xml; charset=UTF-8',
+            'Content-Disposition' => sprintf('attachment; filename="%s"', $filename),
+        ]);
     }
 }
