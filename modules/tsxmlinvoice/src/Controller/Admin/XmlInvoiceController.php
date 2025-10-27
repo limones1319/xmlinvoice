@@ -1,7 +1,5 @@
 <?php
 
-namespace Modules\Tsxmlinvoice\Controller\Admin;
-
 use Address;
 use Configuration;
 use Country;
@@ -18,7 +16,7 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Tools;
 use Validate;
 
-class XmlInvoiceController extends FrameworkBundleAdminController
+class TsXmlInvoiceController extends FrameworkBundleAdminController
 {
     public function generateAction(?int $id_order = null)
     {
@@ -96,7 +94,7 @@ class XmlInvoiceController extends FrameworkBundleAdminController
         $invoice->setAttribute('xmlns:cbc', 'urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2');
         $doc->appendChild($invoice);
 
-        $invoice->appendChild($this->createTextElement($doc, 'cbc:CustomizationID', 'urn:fdc:ro:gov:cie:cius-ro')); // CIUS-RO profile
+        $invoice->appendChild($this->createTextElement($doc, 'cbc:CustomizationID', 'urn:fdc:ro:gov:cie:cius-ro'));
         $invoice->appendChild($this->createTextElement($doc, 'cbc:ProfileID', 'urn:fdc:peppol.eu:poacc:billing:3.0'));
         $invoice->appendChild($this->createTextElement($doc, 'cbc:ID', $order->reference));
         $invoice->appendChild($this->createTextElement($doc, 'cbc:IssueDate', $this->formatDate($invoiceDate)));
