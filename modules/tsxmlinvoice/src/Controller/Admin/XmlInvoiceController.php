@@ -1,6 +1,6 @@
 <?php
 
-namespace Modules\Tsxmlinvoice\Controller\Admin;
+namespace PrestaShop\Module\Tsxmlinvoice\Controller\Admin;
 
 use Address;
 use Configuration;
