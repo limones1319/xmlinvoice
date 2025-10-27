@@ -1,12 +1,6 @@
 modules_tsxmlinvoice_generate:
-  path: /tsxmlinvoice/generate/{id_order}
+  path: /modules/tsxmlinvoice/generate
   methods: [GET]
   defaults:
     _controller: 'PrestaShop\Module\Tsxmlinvoice\Controller\Admin\XmlInvoiceController::generateAction'
     _legacy_controller: 'AdminOrders'
-    _legacy_link: 'AdminOrders'
-    id_order: null
-  requirements:
-    id_order: '\d+'
-  options:
-    compiler_class: 'Symfony\Component\Routing\RouteCompiler'
