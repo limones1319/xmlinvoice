@@ -11,6 +11,11 @@ if (!defined('_PS_VERSION_')) {
 
 require_once __DIR__ . '/autoload.php';
 
+// Forțează încărcarea controller-ului ÎNAINTE ca Symfony să-l caute
+if (file_exists(__DIR__ . '/src/Controller/Admin/XmlInvoiceController.php')) {
+    require_once __DIR__ . '/src/Controller/Admin/XmlInvoiceController.php';
+}
+
 class Tsxmlinvoice extends Module
 {
     /** @var array */

@@ -2,9 +2,11 @@ modules_tsxmlinvoice_generate:
   path: /tsxmlinvoice/generate/{id_order}
   methods: [GET]
   defaults:
-    _controller: 'Modules\\Tsxmlinvoice\\Controller\\Admin\\XmlInvoiceController::generateAction'
+    _controller: 'Modules\Tsxmlinvoice\Controller\Admin\XmlInvoiceController::generateAction'
     _legacy_controller: 'AdminOrders'
     _legacy_link: 'AdminOrders'
     id_order: null
   requirements:
-    id_order: '\\d+'
+    id_order: '\d+'
+  options:
+    compiler_class: 'Symfony\Component\Routing\RouteCompiler'
