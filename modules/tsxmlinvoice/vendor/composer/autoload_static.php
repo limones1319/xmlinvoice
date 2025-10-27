@@ -23,6 +23,7 @@ class ComposerStaticInit93e6662bcdf34ec5a85acd8cbabcaf7e
     public static $classMap = array (
         'Composer\\InstalledVersions' => __DIR__ . '/..' . '/composer/InstalledVersions.php',
         'PrestaShop\\Module\\Tsxmlinvoice\\Controller\\Admin\\XmlInvoiceController' => __DIR__ . '/../..' . '/src/Controller/Admin/XmlInvoiceController.php',
+        'PrestaShop\\Module\\Tsxmlinvoice\\Service\\XmlInvoiceGenerator' => __DIR__ . '/../..' . '/src/Service/XmlInvoiceGenerator.php',
     );
 
     public static function getInitializer(ClassLoader $loader)
