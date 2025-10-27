@@ -23,16 +23,35 @@ class XmlInvoiceGenerator
         return number_format((float) $amount, 2, '.', '');
     }
 
+    private function getInvoiceDisplayId(Order $order): string
+    {
+        $invoices = $order->getInvoicesCollection();
+        if ($invoices && count($invoices)) {
+            $lastInvoice = null;
+            foreach ($invoices as $invoice) {
+                $lastInvoice = $invoice;
+            }
+
+            if ($lastInvoice && method_exists($lastInvoice, 'getInvoiceNumberFormatted')) {
+                $formatted = $lastInvoice->getInvoiceNumberFormatted((int) $order->id_lang, (int) $order->id_shop);
+
+                return ltrim((string) $formatted, '#');
+            }
+
+            if ($lastInvoice && isset($lastInvoice->number) && $lastInvoice->number) {
+                return 'TN' . str_pad((string) $lastInvoice->number, 6, '0', STR_PAD_LEFT);
+            }
+        }
+
+        return (string) $order->reference;
+    }
+
     private function add(DOMDocument $doc, DOMElement $parent, string $nsPrefix, string $name, ?string $value = null, array $attrs = []): DOMElement
     {
         $nsMap = [
             '' => 'urn:oasis:names:specification:ubl:schema:xsd:Invoice-2',
             'cac' => 'urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2',
             'cbc' => 'urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2',
-            'ccts' => 'urn:un:unece:uncefact:documentation:2',
-            'qdt' => 'urn:oasis:names:specification:ubl:schema:xsd:QualifiedDataTypes-2',
-            'udt' => 'urn:oasis:names:specification:ubl:schema:xsd:UnqualifiedDataTypes-2',
-            'xsi' => 'http://www.w3.org/2001/XMLSchema-instance',
         ];
         $ns = '' === $nsPrefix ? $nsMap[''] : ($nsMap[$nsPrefix] ?? $nsMap['']);
         $el = $doc->createElementNS($ns, ($nsPrefix ? $nsPrefix . ':' : '') . $name);
@@ -47,9 +66,27 @@ class XmlInvoiceGenerator
         return $el;
     }
 
+    private function stripChildNamespaceRedeclarations(DOMDocument $doc, DOMElement $root): void
+    {
+        $xpath = new \DOMXPath($doc);
+
+        foreach (['cbc', 'cac'] as $prefix) {
+            $nodes = $xpath->query('//*[@xmlns:' . $prefix . ']');
+            if (!$nodes) {
+                continue;
+            }
+
+            foreach ($nodes as $node) {
+                if ($node !== $root) {
+                    $node->removeAttributeNS('http://www.w3.org/2000/xmlns/', $prefix);
+                }
+            }
+        }
+    }
+
     public function generateForOrder(Order $order): string
     {
-        $invoiceId = $order->reference ?: 'ORD' . $order->id;
+        $invoiceId = $this->getInvoiceDisplayId($order);
         $issueDate = substr($order->invoice_date ?: $order->date_add, 0, 10);
         $dueDate = date('Y-m-d', strtotime($issueDate . ' +7 days'));
 
@@ -93,11 +130,6 @@ class XmlInvoiceGenerator
         $invoice = $doc->createElementNS('urn:oasis:names:specification:ubl:schema:xsd:Invoice-2', 'Invoice');
         $invoice->setAttribute('xmlns:cac', 'urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2');
         $invoice->setAttribute('xmlns:cbc', 'urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2');
-        $invoice->setAttribute('xmlns:ccts', 'urn:un:unece:uncefact:documentation:2');
-        $invoice->setAttribute('xmlns:qdt', 'urn:oasis:names:specification:ubl:schema:xsd:QualifiedDataTypes-2');
-        $invoice->setAttribute('xmlns:udt', 'urn:oasis:names:specification:ubl:schema:xsd:UnqualifiedDataTypes-2');
-        $invoice->setAttribute('xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance');
-        $invoice->setAttribute('xsi:schemaLocation', 'urn:oasis:names:specification:ubl:schema:xsd:Invoice-2 http://docs.oasis-open.org/ubl/os-UBL-2.1/xsd/maindoc/UBL-Invoice-2.1.xsd');
         $doc->appendChild($invoice);
 
         $this->add($doc, $invoice, 'cbc', 'CustomizationID', self::CUSTOMIZATION_ID);
@@ -183,6 +215,8 @@ class XmlInvoiceGenerator
             $price = $this->add($doc, $invoiceLine, 'cac', 'Price');
             $this->add($doc, $price, 'cbc', 'PriceAmount', $this->money($unitNet), ['currencyID' => $docCurrency]);
         }
+
+        $this->stripChildNamespaceRedeclarations($doc, $invoice);
 
         return $doc->saveXML();
     }
