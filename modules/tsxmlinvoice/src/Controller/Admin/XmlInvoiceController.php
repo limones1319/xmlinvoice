@@ -1,5 +1,7 @@
 <?php
 
+namespace Modules\Tsxmlinvoice\Controller\Admin;
+
 use Address;
 use Configuration;
 use Country;
@@ -16,7 +18,7 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Tools;
 use Validate;
 
-class TsXmlInvoiceController extends FrameworkBundleAdminController
+class XmlInvoiceController extends FrameworkBundleAdminController
 {
     public function generateAction(?int $id_order = null)
     {
