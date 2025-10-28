@@ -53,6 +53,8 @@ class XmlInvoiceController extends FrameworkBundleAdminController
         $invoiceDate = $order->invoice_date ?: $order->date_add;
         $dueDate = $order->due_date ?? $invoiceDate;
 
+        $invoiceNumber = null;
+        $firstInvoice = null;
         if ($order->hasInvoice()) {
             $invoices = $order->getInvoicesCollection();
             if ($invoices && $invoices->count()) {
@@ -62,13 +64,15 @@ class XmlInvoiceController extends FrameworkBundleAdminController
                     break;
                 }
 
-                if (isset($firstInvoice) && $firstInvoice instanceof OrderInvoice) {
+                if ($firstInvoice instanceof OrderInvoice && Validate::isLoadedObject($firstInvoice)) {
                     if (!empty($firstInvoice->date_add)) {
                         $invoiceDate = $firstInvoice->date_add;
                     }
                     if (property_exists($firstInvoice, 'due_date') && !empty($firstInvoice->due_date)) {
                         $dueDate = $firstInvoice->due_date;
                     }
+
+                    $invoiceNumber = $this->formatInvoiceNumber($firstInvoice, $order);
                 }
             }
         }
@@ -96,9 +100,15 @@ class XmlInvoiceController extends FrameworkBundleAdminController
         $invoice->setAttribute('xmlns:cbc', 'urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2');
         $doc->appendChild($invoice);
 
+        if (null === $invoiceNumber) {
+            $invoiceNumber = $order->reference;
+        }
+
+        $invoiceNumber = preg_replace('/^#/', '', (string) $invoiceNumber);
+
         $invoice->appendChild($this->createTextElement($doc, 'cbc:CustomizationID', 'urn:fdc:ro:gov:cie:cius-ro'));
         $invoice->appendChild($this->createTextElement($doc, 'cbc:ProfileID', 'urn:fdc:peppol.eu:poacc:billing:3.0'));
-        $invoice->appendChild($this->createTextElement($doc, 'cbc:ID', $order->reference));
+        $invoice->appendChild($this->createTextElement($doc, 'cbc:ID', $invoiceNumber));
         $invoice->appendChild($this->createTextElement($doc, 'cbc:IssueDate', $this->formatDate($invoiceDate)));
         $invoice->appendChild($this->createTextElement($doc, 'cbc:DueDate', $this->formatDate($dueDate)));
         $invoice->appendChild($this->createTextElement($doc, 'cbc:InvoiceTypeCode', '380'));
@@ -134,6 +144,22 @@ class XmlInvoiceController extends FrameworkBundleAdminController
         }
 
         return $doc->saveXML();
+    }
+
+    private function formatInvoiceNumber(OrderInvoice $orderInvoice, Order $order)
+    {
+        $languageId = (int) $order->id_lang;
+        if (property_exists($this, 'context') && $this->context && isset($this->context->language) && $this->context->language) {
+            $languageId = (int) $this->context->language->id;
+        }
+
+        if (method_exists($orderInvoice, 'getInvoiceNumberFormatted')) {
+            return (string) $orderInvoice->getInvoiceNumberFormatted($languageId, (int) $order->id_shop);
+        }
+
+        $prefix = (string) Configuration::get('PS_INVOICE_PREFIX', $languageId, null, (int) $order->id_shop);
+
+        return $prefix . sprintf('%06d', (int) $orderInvoice->number);
     }
 
     private function assertValidToken()
