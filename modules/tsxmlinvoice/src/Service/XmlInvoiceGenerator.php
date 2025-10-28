@@ -66,19 +66,69 @@ class XmlInvoiceGenerator
         return $el;
     }
 
-    private function stripChildNamespaceRedeclarations(DOMDocument $doc, DOMElement $root): void
+    private function dedupeNamespaces(DOMDocument $doc, DOMElement $root): void
     {
-        $xpath = new \DOMXPath($doc);
+        $xmlnsUri = 'http://www.w3.org/2000/xmlns/';
+        $namespaces = [];
 
-        foreach (['cbc', 'cac'] as $prefix) {
-            $nodes = $xpath->query('//*[@xmlns:' . $prefix . ']');
-            if (!$nodes) {
+        foreach ($doc->getElementsByTagName('*') as $element) {
+            /** @var DOMElement $element */
+            if ($element->prefix && $element->namespaceURI) {
+                $namespaces[$element->prefix] = $element->namespaceURI;
+            }
+
+            if (!$element->hasAttributes()) {
                 continue;
             }
 
-            foreach ($nodes as $node) {
-                if ($node !== $root) {
-                    $node->removeAttributeNS('http://www.w3.org/2000/xmlns/', $prefix);
+            foreach ($element->attributes as $attribute) {
+                if ($attribute->prefix && $attribute->namespaceURI && $attribute->namespaceURI !== $xmlnsUri) {
+                    $namespaces[$attribute->prefix] = $attribute->namespaceURI;
+                }
+            }
+        }
+
+        foreach ($namespaces as $prefix => $uri) {
+            if (!$prefix) {
+                continue;
+            }
+
+            if ($root->getAttributeNS($xmlnsUri, $prefix) !== $uri) {
+                $root->setAttributeNS($xmlnsUri, 'xmlns:' . $prefix, $uri);
+            }
+        }
+
+        foreach ($doc->getElementsByTagName('*') as $element) {
+            /** @var DOMElement $element */
+            if ($element === $root || !$element->hasAttributes()) {
+                continue;
+            }
+
+            $attributes = [];
+            foreach ($element->attributes as $attribute) {
+                $attributes[] = $attribute;
+            }
+
+            foreach ($attributes as $attribute) {
+                if ($attribute->namespaceURI !== $xmlnsUri) {
+                    continue;
+                }
+
+                if ($attribute->name === 'xmlns') {
+                    if ($root->namespaceURI === $attribute->value) {
+                        $element->removeAttributeNode($attribute);
+                    }
+
+                    continue;
+                }
+
+                if ($attribute->prefix === 'xmlns') {
+                    $prefix = $attribute->localName;
+                    $rootValue = $root->getAttributeNS($xmlnsUri, $prefix);
+
+                    if ($rootValue && $rootValue === $attribute->value) {
+                        $element->removeAttributeNS($xmlnsUri, $prefix);
+                    }
                 }
             }
         }
@@ -128,8 +178,8 @@ class XmlInvoiceGenerator
         $doc->formatOutput = false;
 
         $invoice = $doc->createElementNS('urn:oasis:names:specification:ubl:schema:xsd:Invoice-2', 'Invoice');
-        $invoice->setAttribute('xmlns:cac', 'urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2');
-        $invoice->setAttribute('xmlns:cbc', 'urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2');
+        $invoice->setAttributeNS('http://www.w3.org/2000/xmlns/', 'xmlns:cac', 'urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2');
+        $invoice->setAttributeNS('http://www.w3.org/2000/xmlns/', 'xmlns:cbc', 'urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2');
         $doc->appendChild($invoice);
 
         $this->add($doc, $invoice, 'cbc', 'CustomizationID', self::CUSTOMIZATION_ID);
@@ -216,7 +266,7 @@ class XmlInvoiceGenerator
             $this->add($doc, $price, 'cbc', 'PriceAmount', $this->money($unitNet), ['currencyID' => $docCurrency]);
         }
 
-        $this->stripChildNamespaceRedeclarations($doc, $invoice);
+        $this->dedupeNamespaces($doc, $invoice);
 
         return $doc->saveXML();
     }
