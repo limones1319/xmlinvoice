@@ -4,6 +4,7 @@ namespace PrestaShop\Module\Tsxmlinvoice\Controller\Admin;
 
 use Address;
 use Configuration;
+use Context;
 use Country;
 use Currency;
 use Customer;
@@ -11,6 +12,7 @@ use DateTime;
 use DOMDocument;
 use Order;
 use OrderInvoice;
+use State;
 use PrestaShopBundle\Controller\Admin\FrameworkBundleAdminController;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
@@ -80,17 +82,70 @@ class XmlInvoiceController extends FrameworkBundleAdminController
         $invoiceAddress = new Address((int) $order->id_address_invoice);
         $customer = new Customer((int) $order->id_customer);
 
-        $shopName = Configuration::get('PS_SHOP_NAME');
+        $context = Context::getContext();
+        $shop = $context ? $context->shop : null;
+        $shopAddress = null;
+        if ($shop && method_exists($shop, 'getAddress')) {
+            $shopAddress = $shop->getAddress();
+        }
+        if (!$shopAddress || !Validate::isLoadedObject($shopAddress)) {
+            $shopAddress = null;
+        }
+
         $supplierVat = Configuration::get('TS_XMLINVOICE_SUPPLIER_CIF');
         $supplierRegistration = Configuration::get('TS_XMLINVOICE_SUPPLIER_REGISTRATION');
-        $supplierStreet = Configuration::get('TS_XMLINVOICE_SUPPLIER_STREET') ?: Configuration::get('PS_SHOP_ADDR1');
-        $supplierCity = Configuration::get('TS_XMLINVOICE_SUPPLIER_CITY') ?: Configuration::get('PS_SHOP_CITY');
-        $supplierPostcode = Configuration::get('TS_XMLINVOICE_SUPPLIER_POSTCODE') ?: Configuration::get('PS_SHOP_CODE');
-        $supplierCountry = Configuration::get('TS_XMLINVOICE_SUPPLIER_COUNTRY') ?: Country::getIsoById((int) Configuration::get('PS_COUNTRY_DEFAULT'));
-        $supplierStreet = $supplierStreet ?: '-';
-        $supplierCity = $supplierCity ?: '-';
-        $supplierPostcode = $supplierPostcode ?: '-';
-        $supplierCountry = $supplierCountry ?: 'RO';
+        $tradingName = Configuration::get('PS_SHOP_NAME');
+        $legalName = '';
+        if ($shopAddress && !empty($shopAddress->company)) {
+            $legalName = trim($shopAddress->company);
+        }
+        if ('' === $legalName) {
+            $legalName = $tradingName;
+        }
+
+        $supplierStreet = '';
+        $supplierAdditionalStreet = '';
+        $supplierCity = '';
+        $supplierPostcode = '';
+        $supplierState = '';
+        $supplierCountry = '';
+        if ($shopAddress) {
+            $supplierStreet = (string) $shopAddress->address1;
+            $supplierAdditionalStreet = (string) $shopAddress->address2;
+            $supplierCity = (string) $shopAddress->city;
+            $supplierPostcode = (string) $shopAddress->postcode;
+            if ($shopAddress->id_state) {
+                $supplierState = (string) State::getNameById((int) $shopAddress->id_state);
+            }
+            if ($shopAddress->id_country) {
+                $supplierCountry = (string) Country::getIsoById((int) $shopAddress->id_country);
+            }
+        }
+
+        if ('' === $supplierStreet) {
+            $supplierStreet = (string) (Configuration::get('TS_XMLINVOICE_SUPPLIER_STREET') ?: Configuration::get('PS_SHOP_ADDR1'));
+        }
+        if ('' === $supplierCity) {
+            $supplierCity = (string) (Configuration::get('TS_XMLINVOICE_SUPPLIER_CITY') ?: Configuration::get('PS_SHOP_CITY'));
+        }
+        if ('' === $supplierPostcode) {
+            $supplierPostcode = (string) (Configuration::get('TS_XMLINVOICE_SUPPLIER_POSTCODE') ?: Configuration::get('PS_SHOP_CODE'));
+        }
+        if ('' === $supplierCountry) {
+            $supplierCountry = (string) (Configuration::get('TS_XMLINVOICE_SUPPLIER_COUNTRY') ?: Country::getIsoById((int) Configuration::get('PS_COUNTRY_DEFAULT')));
+        }
+        if ('' === $supplierCountry) {
+            $supplierCountry = 'RO';
+        }
+
+        $supplierAddressData = [
+            'street' => $supplierStreet,
+            'additionalStreet' => $supplierAdditionalStreet,
+            'city' => $supplierCity,
+            'postcode' => $supplierPostcode,
+            'state' => $supplierState,
+            'countryCode' => $supplierCountry,
+        ];
 
         $doc = new DOMDocument('1.0', 'UTF-8');
         $doc->formatOutput = true;
@@ -116,7 +171,7 @@ class XmlInvoiceController extends FrameworkBundleAdminController
         $invoice->appendChild($this->createTextElement($doc, 'cbc:BuyerReference', (string) $customer->id));
 
         $supplierParty = $doc->createElement('cac:AccountingSupplierParty');
-        $supplierParty->appendChild($this->buildSupplierParty($doc, $shopName, $supplierVat, $supplierRegistration, $supplierStreet, $supplierCity, $supplierPostcode, $supplierCountry));
+        $supplierParty->appendChild($this->buildSupplierParty($doc, $tradingName, $legalName, $supplierVat, $supplierRegistration, $supplierAddressData));
         $invoice->appendChild($supplierParty);
 
         $customerParty = $doc->createElement('cac:AccountingCustomerParty');
@@ -172,7 +227,7 @@ class XmlInvoiceController extends FrameworkBundleAdminController
         }
     }
 
-    private function buildSupplierParty(DOMDocument $doc, $name, $vat, $registration, $street, $city, $postcode, $countryCode)
+    private function buildSupplierParty(DOMDocument $doc, $tradingName, $legalName, $vat, $registration, array $address)
     {
         $party = $doc->createElement('cac:Party');
         if ($vat) {
@@ -182,16 +237,25 @@ class XmlInvoiceController extends FrameworkBundleAdminController
             $party->appendChild($endpoint);
         }
 
-        $partyName = $doc->createElement('cac:PartyName');
-        $partyName->appendChild($this->createTextElement($doc, 'cbc:Name', $name));
-        $party->appendChild($partyName);
+        $displayName = $tradingName ?: $legalName;
+        if ('' !== (string) $displayName) {
+            $partyName = $doc->createElement('cac:PartyName');
+            $partyName->appendChild($this->createTextElement($doc, 'cbc:Name', $displayName));
+            $party->appendChild($partyName);
+        }
 
         $postalAddress = $doc->createElement('cac:PostalAddress');
-        $postalAddress->appendChild($this->createTextElement($doc, 'cbc:StreetName', $street));
-        $postalAddress->appendChild($this->createTextElement($doc, 'cbc:CityName', $city));
-        $postalAddress->appendChild($this->createTextElement($doc, 'cbc:PostalZone', $postcode));
+        $postalAddress->appendChild($this->createTextElement($doc, 'cbc:StreetName', $address['street'] ?? ''));
+        if (!empty($address['additionalStreet'])) {
+            $postalAddress->appendChild($this->createTextElement($doc, 'cbc:AdditionalStreetName', $address['additionalStreet']));
+        }
+        $postalAddress->appendChild($this->createTextElement($doc, 'cbc:CityName', $address['city'] ?? ''));
+        $postalAddress->appendChild($this->createTextElement($doc, 'cbc:PostalZone', $address['postcode'] ?? ''));
+        if (!empty($address['state'])) {
+            $postalAddress->appendChild($this->createTextElement($doc, 'cbc:CountrySubentity', $address['state']));
+        }
         $country = $doc->createElement('cac:Country');
-        $country->appendChild($this->createTextElement($doc, 'cbc:IdentificationCode', $countryCode));
+        $country->appendChild($this->createTextElement($doc, 'cbc:IdentificationCode', $address['countryCode'] ?? ''));
         $postalAddress->appendChild($country);
         $party->appendChild($postalAddress);
 
@@ -205,7 +269,7 @@ class XmlInvoiceController extends FrameworkBundleAdminController
         $party->appendChild($partyTaxScheme);
 
         $partyLegalEntity = $doc->createElement('cac:PartyLegalEntity');
-        $partyLegalEntity->appendChild($this->createTextElement($doc, 'cbc:RegistrationName', $name));
+        $partyLegalEntity->appendChild($this->createTextElement($doc, 'cbc:RegistrationName', $legalName ?: $displayName));
         if ($registration) {
             $partyLegalEntity->appendChild($this->createTextElement($doc, 'cbc:CompanyID', $registration));
         }
