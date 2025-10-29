@@ -1,8 +1,6 @@
 tsxmlinvoice_generate:
-  path: /tsxmlinvoice/generate/{invoiceId}
+  path: /modules/tsxmlinvoice/generate/{invoiceId}
   methods: [GET]
   defaults:
-    _controller: 'PrestaShop\\Module\\Tsxmlinvoice\\Controller\\Admin\\XmlInvoiceController::generate'
-    _legacy_controller: 'AdminOrders'
-    _legacy_link: 'AdminOrders'
+    _controller: 'tsxmlinvoice.controllers.admin.tsxmlinvoice:generateAction'
     invoiceId: null
