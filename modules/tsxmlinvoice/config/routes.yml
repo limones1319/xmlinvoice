@@ -3,8 +3,8 @@ modules_tsxmlinvoice_generate:
   methods: [GET]
   defaults:
     _controller: 'PrestaShop\Module\Tsxmlinvoice\Controller\Admin\XmlInvoiceController::generateAction'
-    _legacy_controller: 'AdminOrders'
-    _legacy_link: 'AdminOrders'
+    _legacy_controller: 'AdminTsXmlInvoice'
+    _legacy_link: 'AdminTsXmlInvoice'
     id_order: null
   requirements:
     id_order: '\d+'
