@@ -1,0 +1,12 @@
+{% extends '@PrestaShop/Admin/layout.html.twig' %}
+
+{% block content %}
+  <div class="card">
+    <div class="card-header">e-Factura XML</div>
+    <div class="card-body">
+      <p class="mb-2">Nu s-a specificat niciun <code>invoiceId</code>.</p>
+      <p class="text-muted">Selectează o factură din admin și apasă butonul „View XML Invoice”.</p>
+      <a class="btn btn-primary" href="{{ path('admin_invoices_index') }}">Mergi la lista de facturi</a>
+    </div>
+  </div>
+{% endblock %}
