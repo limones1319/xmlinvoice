@@ -15,23 +15,18 @@ use OrderInvoice;
 use State;
 use PrestaShopBundle\Controller\Admin\FrameworkBundleAdminController;
 use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
-use Tools;
 use Validate;
 
 class XmlInvoiceController extends FrameworkBundleAdminController
 {
-    public function generateAction(?int $id_order = null)
+    public function generate(int $invoiceId): Response
     {
-        $this->assertValidToken();
-        if (null === $id_order || $id_order <= 0) {
-            $id_order = (int) Tools::getValue('id_order');
-        }
-
+        $id_order = (int) $invoiceId;
         if ($id_order <= 0) {
             throw new NotFoundHttpException('Order ID is required.');
         }
+
         $this->denyAccessUnlessGranted('read', 'AdminTsXmlInvoice');
 
         $order = new Order($id_order);
@@ -45,6 +40,8 @@ class XmlInvoiceController extends FrameworkBundleAdminController
         $response = new Response($xml);
         $response->headers->set('Content-Type', 'application/xml; charset=utf-8');
         $response->headers->set('Content-Disposition', sprintf('attachment; filename="%s"', $filename));
+        $response->headers->set('Cache-Control', 'no-store, no-cache, must-revalidate');
+        $response->headers->set('Pragma', 'no-cache');
 
         return $response;
     }
@@ -215,16 +212,6 @@ class XmlInvoiceController extends FrameworkBundleAdminController
         $prefix = (string) Configuration::get('PS_INVOICE_PREFIX', $languageId, null, (int) $order->id_shop);
 
         return $prefix . sprintf('%06d', (int) $orderInvoice->number);
-    }
-
-    private function assertValidToken()
-    {
-        $expectedToken = Tools::getAdminTokenLite('AdminTsXmlInvoice');
-        $providedToken = (string) Tools::getValue('token');
-
-        if ('' === $providedToken || !hash_equals($expectedToken, $providedToken)) {
-            throw new AccessDeniedHttpException('Invalid security token.');
-        }
     }
 
     private function buildSupplierParty(DOMDocument $doc, $tradingName, $legalName, $vat, $registration, array $address)

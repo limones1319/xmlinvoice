@@ -1,12 +1,1 @@
-modules_tsxmlinvoice_generate:
-  path: /tsxmlinvoice/generate/{id_order}
-  methods: [GET]
-  defaults:
-    _controller: 'PrestaShop\Module\Tsxmlinvoice\Controller\Admin\XmlInvoiceController::generateAction'
-    _legacy_controller: 'AdminTsXmlInvoice'
-    _legacy_link: 'AdminTsXmlInvoice'
-    id_order: null
-  requirements:
-    id_order: '\d+'
-  options:
-    compiler_class: 'Symfony\Component\Routing\RouteCompiler'
+# Route moved to modules/tsxmlinvoice/config/admin/routes.yml to restrict access to Back Office only.
