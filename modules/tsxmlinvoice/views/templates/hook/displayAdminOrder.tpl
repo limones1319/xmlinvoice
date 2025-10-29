@@ -1,7 +1,7 @@
 {if isset($tsxmlinvoice_url)}
     {assign var='tsxmlinvoice_button_id' value='tsxmlinvoice-button'}
-    <a id="{$tsxmlinvoice_button_id}" class="btn btn-default" href="{$tsxmlinvoice_url|escape:'htmlall':'UTF-8'}" target="{$tsxmlinvoice_target|default:'_blank'|escape:'htmlall':'UTF-8'}" rel="noopener noreferrer">
-        <i class="material-icons">code</i>
+    <a id="{$tsxmlinvoice_button_id}" class="btn btn-default" href="{$tsxmlinvoice_url|escape:'htmlall':'UTF-8'}">
+        <i class="material-icons">cloud_download</i>
         {l s='View XML Invoice' mod='tsxmlinvoice'}
     </a>
     <script>

@@ -215,39 +215,25 @@ class Tsxmlinvoice extends Module
             return '';
         }
 
-        $token = Tools::getAdminTokenLite('AdminTsXmlInvoice');
-        
-        // Încearcă să folosești router-ul Symfony
         $router = $this->getRouter();
-        
-        if ($router) {
-            try {
-                $link = $router->generate(
-                    'modules_tsxmlinvoice_generate',
-                    [
-                        'id_order' => (int) $params['id_order'],
-                        'token' => $token,
-                    ],
-                    \Symfony\Component\Routing\Generator\UrlGeneratorInterface::ABSOLUTE_URL
-                );
-            } catch (Exception $e) {
-                // Fallback la URL manual dacă ruta nu e găsită
-                $link = $this->context->link->getBaseLink() 
-                    . 'tsxmlinvoice/generate/' 
-                    . (int) $params['id_order'] 
-                    . '?token=' . $token;
-            }
-        } else {
-            // Fallback complet la URL manual
-            $link = $this->context->link->getBaseLink() 
-                . 'tsxmlinvoice/generate/' 
-                . (int) $params['id_order'] 
-                . '?token=' . $token;
+
+        if (!$router) {
+            return '';
+        }
+
+        try {
+            $link = $router->generate(
+                'tsxmlinvoice_generate',
+                [
+                    'invoiceId' => (int) $params['id_order'],
+                ]
+            );
+        } catch (Exception $e) {
+            return '';
         }
 
         $this->context->smarty->assign([
             'tsxmlinvoice_url' => $link,
-            'tsxmlinvoice_target' => '_blank',
         ]);
 
         return $this->fetch('module:tsxmlinvoice/views/templates/hook/displayAdminOrder.tpl');
