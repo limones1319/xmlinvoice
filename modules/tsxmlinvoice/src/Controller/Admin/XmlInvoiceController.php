@@ -32,7 +32,7 @@ class XmlInvoiceController extends FrameworkBundleAdminController
         if ($id_order <= 0) {
             throw new NotFoundHttpException('Order ID is required.');
         }
-        $this->denyAccessUnlessGranted('read', 'AdminOrders');
+        $this->denyAccessUnlessGranted('read', 'AdminTsXmlInvoice');
 
         $order = new Order($id_order);
         if (!Validate::isLoadedObject($order)) {
@@ -219,7 +219,7 @@ class XmlInvoiceController extends FrameworkBundleAdminController
 
     private function assertValidToken()
     {
-        $expectedToken = Tools::getAdminTokenLite('AdminOrders');
+        $expectedToken = Tools::getAdminTokenLite('AdminTsXmlInvoice');
         $providedToken = (string) Tools::getValue('token');
 
         if ('' === $providedToken || !hash_equals($expectedToken, $providedToken)) {

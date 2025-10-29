@@ -45,12 +45,13 @@ class Tsxmlinvoice extends Module
     {
         return parent::install()
             && $this->registerHook('displayAdminOrder')
-            && $this->installConfiguration();
+            && $this->installConfiguration()
+            && $this->installTab();
     }
 
     public function uninstall()
     {
-        return $this->removeConfiguration() && parent::uninstall();
+        return $this->uninstallTab() && $this->removeConfiguration() && parent::uninstall();
     }
 
     private function installConfiguration()
@@ -69,6 +70,40 @@ class Tsxmlinvoice extends Module
         }
 
         return true;
+    }
+
+    private function installTab()
+    {
+        if (Tab::getIdFromClassName('AdminTsXmlInvoice')) {
+            return true;
+        }
+
+        $tab = new Tab();
+        $tab->active = 0;
+        $tab->class_name = 'AdminTsXmlInvoice';
+        $tab->module = $this->name;
+
+        $parentId = (int) Tab::getIdFromClassName('AdminParentOrders');
+        $tab->id_parent = $parentId ?: 0;
+
+        foreach (Language::getLanguages(false) as $language) {
+            $tab->name[$language['id_lang']] = $this->l('XML Invoice');
+        }
+
+        return (bool) $tab->add();
+    }
+
+    private function uninstallTab()
+    {
+        $tabId = (int) Tab::getIdFromClassName('AdminTsXmlInvoice');
+
+        if (!$tabId) {
+            return true;
+        }
+
+        $tab = new Tab($tabId);
+
+        return (bool) $tab->delete();
     }
 
     public function getContent()
@@ -180,7 +215,7 @@ class Tsxmlinvoice extends Module
             return '';
         }
 
-        $token = Tools::getAdminTokenLite('AdminOrders');
+        $token = Tools::getAdminTokenLite('AdminTsXmlInvoice');
         
         // Încearcă să folosești router-ul Symfony
         $router = $this->getRouter();
