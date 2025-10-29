@@ -1,8 +1,6 @@
 services:
-  _defaults:
-    autowire: true
-    autoconfigure: true
+  tsxmlinvoice.controllers.admin.tsxmlinvoice:
+    class: TsXmlInvoice\Controller\Admin\TsXmlInvoiceController
     public: true
-
-  Modules\Tsxmlinvoice\Controller\Admin\XmlInvoiceController:
-    class: Modules\Tsxmlinvoice\Controller\Admin\XmlInvoiceController
+    tags:
+      - { name: controller.service_arguments }
