@@ -1,0 +1,1 @@
+# Route is defined in modules/tsxmlinvoice/config/routes.yml so both the Symfony and legacy routers can load it.

@@ -5,6 +5,5 @@ tsxmlinvoice_generate:
     _controller: 'PrestaShop\\Module\\Tsxmlinvoice\\Controller\\Admin\\XmlInvoiceController::generate'
     _legacy_controller: 'AdminOrders'
     _legacy_link: 'AdminOrders'
-    invoiceId: ~
   requirements:
-    invoiceId: \d+
+    invoiceId: \\d+
