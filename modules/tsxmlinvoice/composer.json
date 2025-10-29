@@ -1,9 +1,0 @@
-{
-  "name": "tinyservers/tsxmlinvoice",
-  "type": "prestashop-module",
-  "autoload": {
-    "psr-4": {
-      "PrestaShop\\Module\\Tsxmlinvoice\\": "src/"
-    }
-  }
-}
