@@ -225,7 +225,7 @@ class Tsxmlinvoice extends Module
             $link = $router->generate(
                 'tsxmlinvoice_generate',
                 [
-                    'invoiceId' => (int) $params['id_order'],
+                    'orderId' => (int) $params['id_order'],
                 ]
             );
         } catch (Exception $e) {

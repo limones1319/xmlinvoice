@@ -4,3 +4,9 @@ services:
     public: true
     tags:
       - { name: controller.service_arguments }
+
+  tsxmlinvoice.controllers.admin.xml_invoice:
+    class: PrestaShop\Module\Tsxmlinvoice\Controller\Admin\XmlInvoiceController
+    public: true
+    tags:
+      - { name: controller.service_arguments }
