@@ -28,6 +28,7 @@ class TsXmlInvoiceController extends Controller
             return $this->redirectToRoute('admin_invoices_index');
         }
 
+        // AICI generezi XML-ul real pentru $invoice
         $xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Invoice id=\"{$invoice->id}\"></Invoice>\n";
 
         $response = new Response($xml);
