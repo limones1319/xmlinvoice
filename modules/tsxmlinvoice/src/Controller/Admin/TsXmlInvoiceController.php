@@ -19,13 +19,13 @@ class TsXmlInvoiceController extends Controller
 
         if (!ctype_digit((string) $invoiceId)) {
             $this->addFlash('error', 'Parametrul invoiceId trebuie să fie numeric.');
-            return $this->redirectToRoute('admin_invoices_index');
+            return $this->redirectToRoute('admin_order_invoices');
         }
 
         $invoice = new OrderInvoice((int) $invoiceId);
         if (!Validate::isLoadedObject($invoice)) {
             $this->addFlash('error', sprintf('Factura #%s nu a fost găsită.', $invoiceId));
-            return $this->redirectToRoute('admin_invoices_index');
+            return $this->redirectToRoute('admin_order_invoices');
         }
 
         // AICI generezi XML-ul real pentru $invoice
