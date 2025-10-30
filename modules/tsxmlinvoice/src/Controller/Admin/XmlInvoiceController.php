@@ -20,9 +20,9 @@ use Validate;
 
 class XmlInvoiceController extends FrameworkBundleAdminController
 {
-    public function generate(int $invoiceId): Response
+    public function generate(int $orderId): Response
     {
-        $id_order = (int) $invoiceId;
+        $id_order = (int) $orderId;
         if ($id_order <= 0) {
             throw new NotFoundHttpException('Order ID is required.');
         }

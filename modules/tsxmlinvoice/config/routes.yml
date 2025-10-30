@@ -1,6 +1,6 @@
 tsxmlinvoice_generate:
-  path: /modules/tsxmlinvoice/generate/{invoiceId}
+  path: /modules/tsxmlinvoice/generate/{orderId}
   methods: [GET]
   defaults:
-    _controller: 'tsxmlinvoice.controllers.admin.tsxmlinvoice:generateAction'
-    invoiceId: null
+    _controller: 'tsxmlinvoice.controllers.admin.xml_invoice:generate'
+    orderId: 0
