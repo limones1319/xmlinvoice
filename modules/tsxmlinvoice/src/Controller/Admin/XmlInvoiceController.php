@@ -100,36 +100,47 @@ class XmlInvoiceController extends FrameworkBundleAdminController
             $legalName = $tradingName;
         }
 
-        $supplierStreet = '';
+        $supplierStreet = trim((string) Configuration::get('TS_XMLINVOICE_SUPPLIER_STREET'));
         $supplierAdditionalStreet = '';
-        $supplierCity = '';
-        $supplierPostcode = '';
+        $supplierCity = trim((string) Configuration::get('TS_XMLINVOICE_SUPPLIER_CITY'));
+        $supplierPostcode = trim((string) Configuration::get('TS_XMLINVOICE_SUPPLIER_POSTCODE'));
         $supplierState = '';
-        $supplierCountry = '';
+        $supplierCountry = trim((string) Configuration::get('TS_XMLINVOICE_SUPPLIER_COUNTRY'));
         if ($shopAddress) {
-            $supplierStreet = (string) $shopAddress->address1;
-            $supplierAdditionalStreet = (string) $shopAddress->address2;
-            $supplierCity = (string) $shopAddress->city;
-            $supplierPostcode = (string) $shopAddress->postcode;
-            if ($shopAddress->id_state) {
+            if ('' === $supplierStreet && !empty($shopAddress->address1)) {
+                $supplierStreet = (string) $shopAddress->address1;
+            }
+            if ('' === $supplierAdditionalStreet && !empty($shopAddress->address2)) {
+                $supplierAdditionalStreet = (string) $shopAddress->address2;
+            }
+            if ('' === $supplierCity && !empty($shopAddress->city)) {
+                $supplierCity = (string) $shopAddress->city;
+            }
+            if ('' === $supplierPostcode && !empty($shopAddress->postcode)) {
+                $supplierPostcode = (string) $shopAddress->postcode;
+            }
+            if ('' === $supplierState && $shopAddress->id_state) {
                 $supplierState = (string) State::getNameById((int) $shopAddress->id_state);
             }
-            if ($shopAddress->id_country) {
+            if ('' === $supplierCountry && $shopAddress->id_country) {
                 $supplierCountry = (string) Country::getIsoById((int) $shopAddress->id_country);
             }
         }
 
         if ('' === $supplierStreet) {
-            $supplierStreet = (string) (Configuration::get('TS_XMLINVOICE_SUPPLIER_STREET') ?: Configuration::get('PS_SHOP_ADDR1'));
+            $supplierStreet = (string) Configuration::get('PS_SHOP_ADDR1');
+        }
+        if ('' === $supplierAdditionalStreet) {
+            $supplierAdditionalStreet = (string) Configuration::get('PS_SHOP_ADDR2');
         }
         if ('' === $supplierCity) {
-            $supplierCity = (string) (Configuration::get('TS_XMLINVOICE_SUPPLIER_CITY') ?: Configuration::get('PS_SHOP_CITY'));
+            $supplierCity = (string) Configuration::get('PS_SHOP_CITY');
         }
         if ('' === $supplierPostcode) {
-            $supplierPostcode = (string) (Configuration::get('TS_XMLINVOICE_SUPPLIER_POSTCODE') ?: Configuration::get('PS_SHOP_CODE'));
+            $supplierPostcode = (string) Configuration::get('PS_SHOP_CODE');
         }
         if ('' === $supplierCountry) {
-            $supplierCountry = (string) (Configuration::get('TS_XMLINVOICE_SUPPLIER_COUNTRY') ?: Country::getIsoById((int) Configuration::get('PS_COUNTRY_DEFAULT')));
+            $supplierCountry = (string) Country::getIsoById((int) Configuration::get('PS_COUNTRY_DEFAULT'));
         }
         if ('' === $supplierCountry) {
             $supplierCountry = 'RO';
@@ -225,17 +236,15 @@ class XmlInvoiceController extends FrameworkBundleAdminController
         }
 
         $displayName = $tradingName ?: $legalName;
-        if ('' !== (string) $displayName) {
+        $partyNameValue = $legalName ?: $displayName;
+        if ('' !== (string) $partyNameValue) {
             $partyName = $doc->createElement('cac:PartyName');
-            $partyName->appendChild($this->createTextElement($doc, 'cbc:Name', $displayName));
+            $partyName->appendChild($this->createTextElement($doc, 'cbc:Name', $address['street']));
             $party->appendChild($partyName);
         }
 
         $postalAddress = $doc->createElement('cac:PostalAddress');
-        $postalAddress->appendChild($this->createTextElement($doc, 'cbc:StreetName', $address['street'] ?? ''));
-        if (!empty($address['additionalStreet'])) {
-            $postalAddress->appendChild($this->createTextElement($doc, 'cbc:AdditionalStreetName', $address['additionalStreet']));
-        }
+        $postalAddress->appendChild($this->createTextElement($doc, 'cbc:StreetName', $address['additionalStreet'] ?? ''));
         $postalAddress->appendChild($this->createTextElement($doc, 'cbc:CityName', $address['city'] ?? ''));
         $postalAddress->appendChild($this->createTextElement($doc, 'cbc:PostalZone', $address['postcode'] ?? ''));
         if (!empty($address['state'])) {
