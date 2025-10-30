@@ -1,5 +1,5 @@
 <?php
-namespace TsXmlInvoice\Controller\Admin;
+namespace PrestaShop\Module\Tsxmlinvoice\Controller\Admin;
 
 use OrderInvoice;
 use Validate;

@@ -7,5 +7,4 @@ $baseDir = dirname($vendorDir);
 
 return array(
     'Composer\\InstalledVersions' => $vendorDir . '/composer/InstalledVersions.php',
-    'PrestaShop\\Module\\Tsxmlinvoice\\Controller\\Admin\\XmlInvoiceController' => $baseDir . '/src/Controller/Admin/XmlInvoiceController.php',
 );

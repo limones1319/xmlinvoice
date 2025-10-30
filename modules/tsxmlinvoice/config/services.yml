@@ -1,6 +1,6 @@
 services:
   tsxmlinvoice.controllers.admin.tsxmlinvoice:
-    class: TsXmlInvoice\Controller\Admin\TsXmlInvoiceController
+    class: PrestaShop\Module\Tsxmlinvoice\Controller\Admin\TsXmlInvoiceController
     public: true
     tags:
       - { name: controller.service_arguments }
