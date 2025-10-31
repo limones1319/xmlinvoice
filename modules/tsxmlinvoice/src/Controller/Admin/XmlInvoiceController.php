@@ -16,6 +16,7 @@ use State;
 use PrestaShopBundle\Controller\Admin\FrameworkBundleAdminController;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Tools;
 use Validate;
 
 class XmlInvoiceController extends FrameworkBundleAdminController
@@ -35,20 +36,18 @@ class XmlInvoiceController extends FrameworkBundleAdminController
         }
 
         $xml = $this->buildUbl($order);
-        $filename = sprintf('invoice-%s.xml', preg_replace('/[^A-Za-z0-9_-]/', '', $order->reference));
+        $filename = sprintf('invoice-%s.xml', preg_replace('/[^A-Za-z0-9_-]/', '', (string)$order->reference));
 
         $response = new Response($xml);
         $response->headers->set('Content-Type', 'application/xml; charset=utf-8');
-        $response->headers->set('Content-Disposition', sprintf('attachment; filename="%s"', $filename));
-        $response->headers->set('Cache-Control', 'no-store, no-cache, must-revalidate');
-        $response->headers->set('Pragma', 'no-cache');
+        $response->headers->set('Content-Disposition', 'attachment; filename="'.$filename.'"');
 
         return $response;
     }
 
     private function buildUbl(Order $order)
     {
-        $currency = new Currency((int) $order->id_currency);
+        $currency = new Currency((int)$order->id_currency);
         $invoiceDate = $order->invoice_date ?: $order->date_add;
         $dueDate = $order->due_date ?? $invoiceDate;
 
@@ -57,49 +56,51 @@ class XmlInvoiceController extends FrameworkBundleAdminController
         if ($order->hasInvoice()) {
             $invoices = $order->getInvoicesCollection();
             if ($invoices && $invoices->count()) {
-                /** @var OrderInvoice $firstInvoice */
-                foreach ($invoices as $invoiceEntity) {
-                    $firstInvoice = $invoiceEntity;
+                /** @var OrderInvoice $inv */
+                foreach ($invoices as $inv) {
+                    $firstInvoice = $inv;
                     break;
                 }
-
-                if ($firstInvoice instanceof OrderInvoice && Validate::isLoadedObject($firstInvoice)) {
+                if ($firstInvoice instanceof OrderInvoice) {
+                    // Prefer formatted invoice number if available
+                    if (method_exists($firstInvoice, 'getInvoiceNumberFormatted')) {
+                        $invoiceNumber = $firstInvoice->getInvoiceNumberFormatted((int)$order->id_lang, Context::getContext()->language->id);
+                    } else {
+                        $invoiceNumber = (string)$firstInvoice->number;
+                    }
+                    // Prefer invoice's own date as IssueDate when available
                     if (!empty($firstInvoice->date_add)) {
                         $invoiceDate = $firstInvoice->date_add;
                     }
-                    if (property_exists($firstInvoice, 'due_date') && !empty($firstInvoice->due_date)) {
-                        $dueDate = $firstInvoice->due_date;
-                    }
-
-                    $invoiceNumber = $this->formatInvoiceNumber($firstInvoice, $order);
                 }
             }
         }
 
-        $invoiceAddress = new Address((int) $order->id_address_invoice);
-        $customer = new Customer((int) $order->id_customer);
-
         $context = Context::getContext();
-        $shop = $context ? $context->shop : null;
+        $shop = $context->shop;
         $shopAddress = null;
-        if ($shop && method_exists($shop, 'getAddress')) {
+        if (method_exists($shop, 'getAddress')) {
             $shopAddress = $shop->getAddress();
         }
         if (!$shopAddress || !Validate::isLoadedObject($shopAddress)) {
             $shopAddress = null;
         }
 
-        $supplierVat = Configuration::get('TS_XMLINVOICE_SUPPLIER_CIF');
-        $supplierRegistration = Configuration::get('TS_XMLINVOICE_SUPPLIER_REGISTRATION');
-        $tradingName = Configuration::get('PS_SHOP_NAME');
+        // VAT/CIF now parsed from PS_SHOP_DETAILS (fallback to old module fields)
+        $vatCif = $this->getShopVatAndCif();
+        $supplierVat = $vatCif['vat'];                // e.g., RO33913238
+        $supplierRegistration = $vatCif['registration']; // numeric CIF e.g., 33913238
+
+        $tradingName = (string) Configuration::get('PS_SHOP_NAME');
         $legalName = '';
         if ($shopAddress && !empty($shopAddress->company)) {
-            $legalName = trim($shopAddress->company);
+            $legalName = trim((string) $shopAddress->company);
         }
-        if ('' === $legalName) {
+        if ($legalName === '') {
             $legalName = $tradingName;
         }
 
+        // Supplier address with fallbacks from PS defaults
         $supplierStreet = trim((string) Configuration::get('TS_XMLINVOICE_SUPPLIER_STREET'));
         $supplierAdditionalStreet = '';
         $supplierCity = trim((string) Configuration::get('TS_XMLINVOICE_SUPPLIER_CITY'));
@@ -107,42 +108,41 @@ class XmlInvoiceController extends FrameworkBundleAdminController
         $supplierState = '';
         $supplierCountry = trim((string) Configuration::get('TS_XMLINVOICE_SUPPLIER_COUNTRY'));
         if ($shopAddress) {
-            if ('' === $supplierStreet && !empty($shopAddress->address1)) {
-                $supplierStreet = (string) $shopAddress->address1;
+            if ($supplierStreet === '' && !empty($shopAddress->address1)) {
+                $supplierStreet = (string)$shopAddress->address1;
             }
-            if ('' === $supplierAdditionalStreet && !empty($shopAddress->address2)) {
-                $supplierAdditionalStreet = (string) $shopAddress->address2;
+            if ($supplierAdditionalStreet === '' && !empty($shopAddress->address2)) {
+                $supplierAdditionalStreet = (string)$shopAddress->address2;
             }
-            if ('' === $supplierCity && !empty($shopAddress->city)) {
-                $supplierCity = (string) $shopAddress->city;
+            if ($supplierCity === '' && !empty($shopAddress->city)) {
+                $supplierCity = (string)$shopAddress->city;
             }
-            if ('' === $supplierPostcode && !empty($shopAddress->postcode)) {
-                $supplierPostcode = (string) $shopAddress->postcode;
+            if ($supplierPostcode === '' && !empty($shopAddress->postcode)) {
+                $supplierPostcode = (string)$shopAddress->postcode;
             }
-            if ('' === $supplierState && $shopAddress->id_state) {
-                $supplierState = (string) State::getNameById((int) $shopAddress->id_state);
+            if ($supplierState === '' && $shopAddress->id_state) {
+                $supplierState = (string) State::getNameById((int)$shopAddress->id_state);
             }
-            if ('' === $supplierCountry && $shopAddress->id_country) {
-                $supplierCountry = (string) Country::getIsoById((int) $shopAddress->id_country);
+            if ($supplierCountry === '' && $shopAddress->id_country) {
+                $supplierCountry = (string) Country::getIsoById((int)$shopAddress->id_country);
             }
         }
-
-        if ('' === $supplierStreet) {
+        if ($supplierStreet === '') {
             $supplierStreet = (string) Configuration::get('PS_SHOP_ADDR1');
         }
-        if ('' === $supplierAdditionalStreet) {
+        if ($supplierAdditionalStreet === '') {
             $supplierAdditionalStreet = (string) Configuration::get('PS_SHOP_ADDR2');
         }
-        if ('' === $supplierCity) {
+        if ($supplierCity === '') {
             $supplierCity = (string) Configuration::get('PS_SHOP_CITY');
         }
-        if ('' === $supplierPostcode) {
+        if ($supplierPostcode === '') {
             $supplierPostcode = (string) Configuration::get('PS_SHOP_CODE');
         }
-        if ('' === $supplierCountry) {
+        if ($supplierCountry === '') {
             $supplierCountry = (string) Country::getIsoById((int) Configuration::get('PS_COUNTRY_DEFAULT'));
         }
-        if ('' === $supplierCountry) {
+        if ($supplierCountry === '') {
             $supplierCountry = 'RO';
         }
 
@@ -156,19 +156,20 @@ class XmlInvoiceController extends FrameworkBundleAdminController
         ];
 
         $doc = new DOMDocument('1.0', 'UTF-8');
+        $doc->preserveWhiteSpace = false;
         $doc->formatOutput = true;
 
         $invoice = $doc->createElementNS('urn:oasis:names:specification:ubl:schema:xsd:Invoice-2', 'Invoice');
+        $doc->appendChild($invoice);
         $invoice->setAttribute('xmlns:cac', 'urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2');
         $invoice->setAttribute('xmlns:cbc', 'urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2');
-        $doc->appendChild($invoice);
 
-        if (null === $invoiceNumber) {
-            $invoiceNumber = $order->reference;
+        if ($invoiceNumber === null) {
+            $invoiceNumber = (string)$order->reference;
         }
+        $invoiceNumber = preg_replace('/^#/', '', $invoiceNumber);
 
-        $invoiceNumber = preg_replace('/^#/', '', (string) $invoiceNumber);
-
+        // Header
         $invoice->appendChild($this->createTextElement($doc, 'cbc:CustomizationID', 'urn:fdc:ro:gov:cie:cius-ro'));
         $invoice->appendChild($this->createTextElement($doc, 'cbc:ProfileID', 'urn:fdc:peppol.eu:poacc:billing:3.0'));
         $invoice->appendChild($this->createTextElement($doc, 'cbc:ID', $invoiceNumber));
@@ -176,7 +177,13 @@ class XmlInvoiceController extends FrameworkBundleAdminController
         $invoice->appendChild($this->createTextElement($doc, 'cbc:DueDate', $this->formatDate($dueDate)));
         $invoice->appendChild($this->createTextElement($doc, 'cbc:InvoiceTypeCode', '380'));
         $invoice->appendChild($this->createTextElement($doc, 'cbc:DocumentCurrencyCode', $currency->iso_code));
-        $invoice->appendChild($this->createTextElement($doc, 'cbc:BuyerReference', (string) $customer->id));
+
+        // Parties
+        $customer = new Customer((int)$order->id_customer);
+        $invoiceAddress = new Address((int)$order->id_address_invoice);
+
+        // One BuyerReference only
+        $invoice->appendChild($this->createTextElement($doc, 'cbc:BuyerReference', (string)$customer->id));
 
         $supplierParty = $doc->createElement('cac:AccountingSupplierParty');
         $supplierParty->appendChild($this->buildSupplierParty($doc, $tradingName, $legalName, $supplierVat, $supplierRegistration, $supplierAddressData));
@@ -186,8 +193,8 @@ class XmlInvoiceController extends FrameworkBundleAdminController
         $customerParty->appendChild($this->buildCustomerParty($doc, $invoiceAddress, $customer));
         $invoice->appendChild($customerParty);
 
+        // Taxes
         $taxData = $this->buildTaxData($order);
-
         $taxTotal = $doc->createElement('cac:TaxTotal');
         $taxTotal->appendChild($this->createAmountElement($doc, 'cbc:TaxAmount', $taxData['total'], $currency->iso_code));
         foreach ($taxData['subtotals'] as $subtotal) {
@@ -195,40 +202,32 @@ class XmlInvoiceController extends FrameworkBundleAdminController
         }
         $invoice->appendChild($taxTotal);
 
-        $invoice->appendChild($this->buildMonetaryTotal($doc, $order, $currency->iso_code));
+        // Totals
+        $legalMonetaryTotal = $doc->createElement('cac:LegalMonetaryTotal');
+        $legalMonetaryTotal->appendChild($this->createAmountElement($doc, 'cbc:LineExtensionAmount', $taxData['base'], $currency->iso_code));
+        $legalMonetaryTotal->appendChild($this->createAmountElement($doc, 'cbc:TaxExclusiveAmount', $taxData['base'], $currency->iso_code));
+        $legalMonetaryTotal->appendChild($this->createAmountElement($doc, 'cbc:TaxInclusiveAmount', $taxData['total'] + $taxData['base'], $currency->iso_code));
+        $legalMonetaryTotal->appendChild($this->createAmountElement($doc, 'cbc:PayableAmount', $taxData['total'] + $taxData['base'], $currency->iso_code));
+        $invoice->appendChild($legalMonetaryTotal);
 
+        // Lines
         $lineNumber = 1;
         foreach ($order->getOrderDetailList() as $detail) {
             $invoice->appendChild($this->buildInvoiceLine($doc, $detail, $currency->iso_code, $lineNumber++));
         }
-
-        if ((float) $order->total_shipping_tax_excl > 0 || (float) $order->total_shipping_tax_incl > 0) {
+        if ((float)$order->total_shipping_tax_excl > 0 || (float)$order->total_shipping_tax_incl > 0) {
             $invoice->appendChild($this->buildShippingLine($doc, $order, $currency->iso_code, $lineNumber++));
         }
 
         return $doc->saveXML();
     }
 
-    private function formatInvoiceNumber(OrderInvoice $orderInvoice, Order $order)
-    {
-        $languageId = (int) $order->id_lang;
-        if (property_exists($this, 'context') && $this->context && isset($this->context->language) && $this->context->language) {
-            $languageId = (int) $this->context->language->id;
-        }
-
-        if (method_exists($orderInvoice, 'getInvoiceNumberFormatted')) {
-            return (string) $orderInvoice->getInvoiceNumberFormatted($languageId, (int) $order->id_shop);
-        }
-
-        $prefix = (string) Configuration::get('PS_INVOICE_PREFIX', $languageId, null, (int) $order->id_shop);
-
-        return $prefix . sprintf('%06d', (int) $orderInvoice->number);
-    }
-
     private function buildSupplierParty(DOMDocument $doc, $tradingName, $legalName, $vat, $registration, array $address)
     {
         $party = $doc->createElement('cac:Party');
+
         if ($vat) {
+            // EndpointID with VAT
             $endpoint = $doc->createElement('cbc:EndpointID');
             $endpoint->appendChild($doc->createTextNode($vat));
             $endpoint->setAttribute('schemeID', 'VAT');
@@ -237,14 +236,17 @@ class XmlInvoiceController extends FrameworkBundleAdminController
 
         $displayName = $tradingName ?: $legalName;
         $partyNameValue = $legalName ?: $displayName;
-        if ('' !== (string) $partyNameValue) {
+        if ($partyNameValue !== '') {
             $partyName = $doc->createElement('cac:PartyName');
-            $partyName->appendChild($this->createTextElement($doc, 'cbc:Name', $address['street']));
+            $partyName->appendChild($this->createTextElement($doc, 'cbc:Name', $partyNameValue));
             $party->appendChild($partyName);
         }
 
         $postalAddress = $doc->createElement('cac:PostalAddress');
-        $postalAddress->appendChild($this->createTextElement($doc, 'cbc:StreetName', $address['additionalStreet'] ?? ''));
+        $postalAddress->appendChild($this->createTextElement($doc, 'cbc:StreetName', $address['street'] ?? ''));
+        if (!empty($address['additionalStreet'])) {
+            $postalAddress->appendChild($this->createTextElement($doc, 'cbc:AdditionalStreetName', $address['additionalStreet']));
+        }
         $postalAddress->appendChild($this->createTextElement($doc, 'cbc:CityName', $address['city'] ?? ''));
         $postalAddress->appendChild($this->createTextElement($doc, 'cbc:PostalZone', $address['postcode'] ?? ''));
         if (!empty($address['state'])) {
@@ -255,6 +257,7 @@ class XmlInvoiceController extends FrameworkBundleAdminController
         $postalAddress->appendChild($country);
         $party->appendChild($postalAddress);
 
+        // VAT id in PartyTaxScheme/CompanyID (usually "RO{CIF}")
         $partyTaxScheme = $doc->createElement('cac:PartyTaxScheme');
         if ($vat) {
             $partyTaxScheme->appendChild($this->createTextElement($doc, 'cbc:CompanyID', $vat));
@@ -264,6 +267,7 @@ class XmlInvoiceController extends FrameworkBundleAdminController
         $partyTaxScheme->appendChild($taxScheme);
         $party->appendChild($partyTaxScheme);
 
+        // Legal entity name and numeric CompanyID (CIF)
         $partyLegalEntity = $doc->createElement('cac:PartyLegalEntity');
         $partyLegalEntity->appendChild($this->createTextElement($doc, 'cbc:RegistrationName', $legalName ?: $displayName));
         if ($registration) {
@@ -277,6 +281,7 @@ class XmlInvoiceController extends FrameworkBundleAdminController
     private function buildCustomerParty(DOMDocument $doc, Address $address, Customer $customer)
     {
         $party = $doc->createElement('cac:Party');
+
         $partyName = $doc->createElement('cac:PartyName');
         $customerName = $address->company ?: trim($customer->firstname . ' ' . $customer->lastname);
         $partyName->appendChild($this->createTextElement($doc, 'cbc:Name', $customerName));
@@ -288,130 +293,108 @@ class XmlInvoiceController extends FrameworkBundleAdminController
             $postalAddress->appendChild($this->createTextElement($doc, 'cbc:AdditionalStreetName', $address->address2));
         }
         $postalAddress->appendChild($this->createTextElement($doc, 'cbc:CityName', $address->city));
+        if (!empty($address->id_state)) {
+            $postalAddress->appendChild($this->createTextElement($doc, 'cbc:CountrySubentity', State::getNameById((int)$address->id_state)));
+        }
         $postalAddress->appendChild($this->createTextElement($doc, 'cbc:PostalZone', $address->postcode));
         $country = $doc->createElement('cac:Country');
-        $country->appendChild($this->createTextElement($doc, 'cbc:IdentificationCode', Country::getIsoById((int) $address->id_country)));
+        $country->appendChild($this->createTextElement($doc, 'cbc:IdentificationCode', Country::getIsoById((int)$address->id_country)));
         $postalAddress->appendChild($country);
         $party->appendChild($postalAddress);
 
-        $partyLegalEntity = $doc->createElement('cac:PartyLegalEntity');
-        $partyLegalEntity->appendChild($this->createTextElement($doc, 'cbc:RegistrationName', $customerName));
-        if (!empty($address->vat_number)) {
-            $partyTaxScheme = $doc->createElement('cac:PartyTaxScheme');
-            $partyTaxScheme->appendChild($this->createTextElement($doc, 'cbc:CompanyID', $address->vat_number));
-            $taxScheme = $doc->createElement('cac:TaxScheme');
-            $taxScheme->appendChild($this->createTextElement($doc, 'cbc:ID', 'VAT'));
-            $partyTaxScheme->appendChild($taxScheme);
-            $party->appendChild($partyTaxScheme);
-        }
-        $party->appendChild($partyLegalEntity);
+        // (Optional) add buyer VAT scheme here if you handle B2B with VAT numbers
 
         return $party;
     }
 
     private function buildTaxData(Order $order)
     {
-        $subtotals = [];
-        $details = $order->getOrderDetailList();
-        foreach ($details as $detail) {
-            $rate = (float) $detail['tax_rate'];
-            $lineTax = (float) $detail['total_price_tax_incl'] - (float) $detail['total_price_tax_excl'];
+        $subtotals = []; // key = percent (float)
+        foreach ($order->getOrderDetailList() as $detail) {
+            $rate = (float)$detail['tax_rate'];
+            $excl = (float)$detail['total_price_tax_excl'];
+            $incl = (float)$detail['total_price_tax_incl'];
+            $tax  = max(0.0, $incl - $excl);
+
             if (!isset($subtotals[$rate])) {
-                $subtotals[$rate] = [
-                    'rate' => $rate,
-                    'taxable' => 0.0,
-                    'tax' => 0.0,
-                ];
+                $subtotals[$rate] = ['taxable' => 0.0, 'tax' => 0.0, 'percent' => $rate];
             }
-            $subtotals[$rate]['taxable'] += (float) $detail['total_price_tax_excl'];
-            $subtotals[$rate]['tax'] += $lineTax;
+            $subtotals[$rate]['taxable'] += $excl;
+            $subtotals[$rate]['tax']     += $tax;
         }
 
-        $totalTax = 0.0;
-        foreach ($subtotals as $rate => $subtotal) {
-            $totalTax += $subtotal['tax'];
-        }
-
-        $shippingExcl = (float) $order->total_shipping_tax_excl;
-        $shippingIncl = (float) $order->total_shipping_tax_incl;
-        if ($shippingExcl || $shippingIncl) {
-            $shippingRate = (float) $order->carrier_tax_rate;
-            $shippingTax = $shippingIncl - $shippingExcl;
-            if (!isset($subtotals[$shippingRate])) {
-                $subtotals[$shippingRate] = [
-                    'rate' => $shippingRate,
-                    'taxable' => 0.0,
-                    'tax' => 0.0,
-                ];
+        // Shipping
+        $shippingExcl = (float)$order->total_shipping_tax_excl;
+        $shippingIncl = (float)$order->total_shipping_tax_incl;
+        if ($shippingExcl > 0 || $shippingIncl > 0) {
+            $shipRate = (float)$order->carrier_tax_rate;
+            $shipTax  = max(0.0, $shippingIncl - $shippingExcl);
+            if (!isset($subtotals[$shipRate])) {
+                $subtotals[$shipRate] = ['taxable' => 0.0, 'tax' => 0.0, 'percent' => $shipRate];
             }
-            $subtotals[$shippingRate]['taxable'] += $shippingExcl;
-            $subtotals[$shippingRate]['tax'] += $shippingTax;
-            $totalTax += $shippingTax;
+            $subtotals[$shipRate]['taxable'] += $shippingExcl;
+            $subtotals[$shipRate]['tax']     += $shipTax;
         }
 
-        return [
-            'total' => $totalTax,
-            'subtotals' => $subtotals,
-        ];
+        $base  = 0.0;
+        $total = 0.0;
+        $out   = [];
+        foreach ($subtotals as $rate => $st) {
+            $base  += $st['taxable'];
+            $total += $st['tax'];
+            $out[] = [
+                'taxable'   => $st['taxable'],
+                'taxAmount' => $st['tax'],
+                'percent'   => $st['percent'],
+                'category'  => ($st['percent'] > 0.0) ? 'S' : 'Z',
+            ];
+        }
+
+        return ['base' => $base, 'total' => $total, 'subtotals' => $out];
     }
 
     private function buildTaxSubtotal(DOMDocument $doc, array $subtotal, $currency)
     {
-        $element = $doc->createElement('cac:TaxSubtotal');
-        $element->appendChild($this->createAmountElement($doc, 'cbc:TaxableAmount', $subtotal['taxable'], $currency));
-        $element->appendChild($this->createAmountElement($doc, 'cbc:TaxAmount', $subtotal['tax'], $currency));
+        $taxSubtotal = $doc->createElement('cac:TaxSubtotal');
+        $taxSubtotal->appendChild($this->createAmountElement($doc, 'cbc:TaxableAmount', $subtotal['taxable'], $currency));
+        $taxSubtotal->appendChild($this->createAmountElement($doc, 'cbc:TaxAmount', $subtotal['taxAmount'], $currency));
 
-        $category = $doc->createElement('cac:TaxCategory');
-        $rate = (float) $subtotal['rate'];
-        if ($rate > 0) {
-            $category->appendChild($this->createTextElement($doc, 'cbc:ID', 'S'));
-            $category->appendChild($this->createTextElement($doc, 'cbc:Percent', $this->formatAmount($rate)));
-        } else {
-            $category->appendChild($this->createTextElement($doc, 'cbc:ID', 'E'));
-            $category->appendChild($this->createTextElement($doc, 'cbc:Percent', '0'));
-            $category->appendChild($this->createTextElement($doc, 'cbc:TaxExemptionReasonCode', 'VATEX-EU-132-1'));
-            $category->appendChild($this->createTextElement($doc, 'cbc:TaxExemptionReason', 'Exempt from VAT'));
+        $taxCategory = $doc->createElement('cac:TaxCategory');
+        $taxCategory->appendChild($this->createTextElement($doc, 'cbc:ID', $subtotal['category']));
+        $taxCategory->appendChild($this->createTextElement($doc, 'cbc:Percent', (string)$subtotal['percent']));
+        // Optional exemption reason for zero-rated/scutite
+        if ((float)$subtotal['percent'] == 0.0) {
+            // $taxCategory->appendChild($this->createTextElement($doc, 'cbc:TaxExemptionReasonCode', 'VATEX-EU-...'));
+            // $taxCategory->appendChild($this->createTextElement($doc, 'cbc:TaxExemptionReason', 'Exempt/Zero rated'));
         }
         $taxScheme = $doc->createElement('cac:TaxScheme');
         $taxScheme->appendChild($this->createTextElement($doc, 'cbc:ID', 'VAT'));
-        $category->appendChild($taxScheme);
+        $taxCategory->appendChild($taxScheme);
 
-        $element->appendChild($category);
-
-        return $element;
+        $taxSubtotal->appendChild($taxCategory);
+        return $taxSubtotal;
     }
 
-    private function buildMonetaryTotal(DOMDocument $doc, Order $order, $currency)
-    {
-        $legalTotal = $doc->createElement('cac:LegalMonetaryTotal');
-        $legalTotal->appendChild($this->createAmountElement($doc, 'cbc:LineExtensionAmount', (float) $order->total_products, $currency));
-        $legalTotal->appendChild($this->createAmountElement($doc, 'cbc:TaxExclusiveAmount', (float) $order->total_paid_tax_excl, $currency));
-        $legalTotal->appendChild($this->createAmountElement($doc, 'cbc:TaxInclusiveAmount', (float) $order->total_paid_tax_incl, $currency));
-        $legalTotal->appendChild($this->createAmountElement($doc, 'cbc:PayableAmount', (float) $order->total_paid_tax_incl, $currency));
-
-        return $legalTotal;
-    }
-
-    private function buildInvoiceLine(DOMDocument $doc, array $detail, $currency, $lineId)
+    private function buildInvoiceLine(DOMDocument $doc, array $detail, string $currency, int $lineId)
     {
         $line = $doc->createElement('cac:InvoiceLine');
-        $line->appendChild($this->createTextElement($doc, 'cbc:ID', (string) $lineId));
-        $unitCode = !empty($detail['product_quantity_unit']) ? $detail['product_quantity_unit'] : 'EA';
-        $line->appendChild($this->createAmountElement($doc, 'cbc:InvoicedQuantity', (float) $detail['product_quantity'], $unitCode, false));
-        $line->appendChild($this->createAmountElement($doc, 'cbc:LineExtensionAmount', (float) $detail['total_price_tax_excl'], $currency));
+        $line->appendChild($this->createTextElement($doc, 'cbc:ID', (string)$lineId));
+
+        $qty = (float)$detail['product_quantity'];
+        $line->appendChild($this->createAmountElement($doc, 'cbc:InvoicedQuantity', $qty, 'C62', false));
+        $line->appendChild($this->createAmountElement($doc, 'cbc:LineExtensionAmount', (float)$detail['total_price_tax_excl'], $currency));
 
         $item = $doc->createElement('cac:Item');
-        $item->appendChild($this->createTextElement($doc, 'cbc:Name', $detail['product_name']));
+        $item->appendChild($this->createTextElement($doc, 'cbc:Name', (string)$detail['product_name']));
+
         $classification = $doc->createElement('cac:ClassifiedTaxCategory');
-        $rate = (float) $detail['tax_rate'];
-        if ($rate > 0) {
+        $rate = (float)$detail['tax_rate'];
+        if ($rate > 0.0) {
             $classification->appendChild($this->createTextElement($doc, 'cbc:ID', 'S'));
             $classification->appendChild($this->createTextElement($doc, 'cbc:Percent', $this->formatAmount($rate)));
         } else {
-            $classification->appendChild($this->createTextElement($doc, 'cbc:ID', 'E'));
+            $classification->appendChild($this->createTextElement($doc, 'cbc:ID', 'Z'));
             $classification->appendChild($this->createTextElement($doc, 'cbc:Percent', '0'));
-            $classification->appendChild($this->createTextElement($doc, 'cbc:TaxExemptionReasonCode', 'VATEX-EU-132-1'));
-            $classification->appendChild($this->createTextElement($doc, 'cbc:TaxExemptionReason', 'Exempt from VAT'));
         }
         $taxScheme = $doc->createElement('cac:TaxScheme');
         $taxScheme->appendChild($this->createTextElement($doc, 'cbc:ID', 'VAT'));
@@ -420,34 +403,33 @@ class XmlInvoiceController extends FrameworkBundleAdminController
         $line->appendChild($item);
 
         $price = $doc->createElement('cac:Price');
-        $unitPrice = (float) $detail['unit_price_tax_excl'];
+        $unitPrice = (float)$detail['unit_price_tax_excl'];
         $price->appendChild($this->createAmountElement($doc, 'cbc:PriceAmount', $unitPrice, $currency));
-        $price->appendChild($this->createAmountElement($doc, 'cbc:BaseQuantity', 1, $unitCode, false));
+        $price->appendChild($this->createAmountElement($doc, 'cbc:BaseQuantity', 1, 'C62', false));
         $line->appendChild($price);
 
         return $line;
     }
 
-    private function buildShippingLine(DOMDocument $doc, Order $order, $currency, $lineId)
+    private function buildShippingLine(DOMDocument $doc, Order $order, string $currency, int $lineId)
     {
         $line = $doc->createElement('cac:InvoiceLine');
-        $line->appendChild($this->createTextElement($doc, 'cbc:ID', (string) $lineId));
-        $line->appendChild($this->createAmountElement($doc, 'cbc:InvoicedQuantity', 1, 'EA', false));
-        $line->appendChild($this->createAmountElement($doc, 'cbc:LineExtensionAmount', (float) $order->total_shipping_tax_excl, $currency));
+        $line->appendChild($this->createTextElement($doc, 'cbc:ID', (string)$lineId));
+        $line->appendChild($this->createAmountElement($doc, 'cbc:InvoicedQuantity', 1, 'C62', false));
+        $line->appendChild($this->createAmountElement($doc, 'cbc:LineExtensionAmount', (float)$order->total_shipping_tax_excl, $currency));
 
         $item = $doc->createElement('cac:Item');
-        $item->appendChild($this->createTextElement($doc, 'cbc:Name', $order->getCarrierName() ?: $this->trans('Shipping')));
+        $name = method_exists($order, 'getCarrierName') ? (string)$order->getCarrierName() : 'Shipping';
+        $item->appendChild($this->createTextElement($doc, 'cbc:Name', $name));
 
         $classification = $doc->createElement('cac:ClassifiedTaxCategory');
-        $rate = (float) $order->carrier_tax_rate;
-        if ($rate > 0) {
+        $rate = (float)$order->carrier_tax_rate;
+        if ($rate > 0.0) {
             $classification->appendChild($this->createTextElement($doc, 'cbc:ID', 'S'));
             $classification->appendChild($this->createTextElement($doc, 'cbc:Percent', $this->formatAmount($rate)));
         } else {
-            $classification->appendChild($this->createTextElement($doc, 'cbc:ID', 'E'));
+            $classification->appendChild($this->createTextElement($doc, 'cbc:ID', 'Z'));
             $classification->appendChild($this->createTextElement($doc, 'cbc:Percent', '0'));
-            $classification->appendChild($this->createTextElement($doc, 'cbc:TaxExemptionReasonCode', 'VATEX-EU-132-1'));
-            $classification->appendChild($this->createTextElement($doc, 'cbc:TaxExemptionReason', 'Exempt from VAT'));
         }
         $taxScheme = $doc->createElement('cac:TaxScheme');
         $taxScheme->appendChild($this->createTextElement($doc, 'cbc:ID', 'VAT'));
@@ -456,8 +438,8 @@ class XmlInvoiceController extends FrameworkBundleAdminController
         $line->appendChild($item);
 
         $price = $doc->createElement('cac:Price');
-        $price->appendChild($this->createAmountElement($doc, 'cbc:PriceAmount', (float) $order->total_shipping_tax_excl, $currency));
-        $price->appendChild($this->createAmountElement($doc, 'cbc:BaseQuantity', 1, 'EA', false));
+        $price->appendChild($this->createAmountElement($doc, 'cbc:PriceAmount', (float)$order->total_shipping_tax_excl, $currency));
+        $price->appendChild($this->createAmountElement($doc, 'cbc:BaseQuantity', 1, 'C62', false));
         $line->appendChild($price);
 
         return $line;
@@ -472,21 +454,17 @@ class XmlInvoiceController extends FrameworkBundleAdminController
         } else {
             $element->setAttribute('unitCode', $currency);
         }
-
         return $element;
+    }
+
+    private function formatAmount($amount)
+    {
+        return number_format((float)$amount, 2, '.', '');
     }
 
     private function createTextElement(DOMDocument $doc, $name, $value)
     {
-        $element = $doc->createElement($name);
-        $element->appendChild($doc->createTextNode((string) ($value ?? '')));
-
-        return $element;
-    }
-
-    private function formatAmount($value)
-    {
-        return number_format((float) $value, 2, '.', '');
+        return $doc->createElement($name, htmlspecialchars((string)$value, ENT_XML1 | ENT_COMPAT, 'UTF-8'));
     }
 
     private function formatDate($date)
@@ -494,11 +472,48 @@ class XmlInvoiceController extends FrameworkBundleAdminController
         if (empty($date) || $date === '0000-00-00 00:00:00') {
             return (new DateTime())->format('Y-m-d');
         }
-
         try {
             return (new DateTime($date))->format('Y-m-d');
         } catch (\Exception $e) {
             return (new DateTime())->format('Y-m-d');
         }
+    }
+
+    /**
+     * Extract VAT (RO+number) and CIF/CompanyID (number) from PS_SHOP_DETAILS,
+     * falling back to module configs if not found.
+     */
+    private function getShopVatAndCif(): array
+    {
+        $details = (string) Configuration::get('PS_SHOP_DETAILS');
+        $vat = '';
+        $cif = '';
+
+        if (!empty($details)) {
+            $text = strip_tags($details);
+            $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            $text = preg_replace('/\s+/', ' ', $text);
+
+            if (preg_match('/\bRO\s*([0-9]{2,12})\b/i', $text, $m)) {
+                $cif = $m[1];
+                $vat = 'RO' . $cif;
+            } elseif (preg_match('/\b(?:CIF|CUI|VAT|TVA)\s*[:#]?\s*(?:RO\s*)?([0-9]{2,12})\b/i', $text, $m)) {
+                $cif = $m[1];
+                $vat = 'RO' . $cif;
+            }
+        }
+
+        if ($vat === '') {
+            $vat = (string) Configuration::get('TS_XMLINVOICE_SUPPLIER_CIF');
+        }
+        if ($cif === '') {
+            $cif = (string) Configuration::get('TS_XMLINVOICE_SUPPLIER_REGISTRATION');
+        }
+
+        if ($vat && !preg_match('/^RO/i', $vat) && preg_match('/^[0-9]{2,12}$/', $vat)) {
+            $vat = 'RO' . $vat;
+        }
+
+        return ['vat' => (string)$vat, 'registration' => (string)$cif];
     }
 }
