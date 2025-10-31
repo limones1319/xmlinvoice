@@ -89,8 +89,15 @@ class XmlInvoiceController extends FrameworkBundleAdminController
             $shopAddress = null;
         }
 
-        $supplierVat = Configuration::get('TS_XMLINVOICE_SUPPLIER_CIF');
-        $supplierRegistration = Configuration::get('TS_XMLINVOICE_SUPPLIER_REGISTRATION');
+        $supplierVat = trim((string) Configuration::get('TS_XMLINVOICE_SUPPLIER_CIF'));
+        $supplierRegistration = trim((string) Configuration::get('TS_XMLINVOICE_SUPPLIER_REGISTRATION'));
+        $shopDetailsRegistration = $this->extractCompanyIdentifierFromShopDetails((string) Configuration::get('PS_SHOP_DETAILS'));
+        if ('' !== $shopDetailsRegistration) {
+            $supplierRegistration = $shopDetailsRegistration;
+            if ('' === $supplierVat) {
+                $supplierVat = $shopDetailsRegistration;
+            }
+        }
         $tradingName = Configuration::get('PS_SHOP_NAME');
         $legalName = '';
         if ($shopAddress && !empty($shopAddress->company)) {
@@ -500,5 +507,46 @@ class XmlInvoiceController extends FrameworkBundleAdminController
         } catch (\Exception $e) {
             return (new DateTime())->format('Y-m-d');
         }
+    }
+
+    private function extractCompanyIdentifierFromShopDetails($details)
+    {
+        if (!is_string($details)) {
+            return '';
+        }
+
+        $details = trim($details);
+        if ('' === $details) {
+            return '';
+        }
+
+        $details = html_entity_decode($details, ENT_QUOTES, 'UTF-8');
+        $details = str_ireplace(['<br />', '<br/>', '<br>'], "\n", $details);
+        $details = strip_tags($details);
+
+        $lines = preg_split('/[\r\n]+/', $details);
+        if (!is_array($lines)) {
+            $lines = [$details];
+        }
+
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if ('' === $line) {
+                continue;
+            }
+
+            if (!preg_match('/\b(?:CIF|CUI|VAT(?:\s*(?:number|no\.?))?|TVA|Cod(?:ul)?\s+Fiscal)\b/i', $line)) {
+                continue;
+            }
+
+            if (preg_match('/(?:CIF|CUI|VAT(?:\s*(?:number|no\.?))?|TVA|Cod(?:ul)?\s+Fiscal)[^A-Z0-9]*([A-Z0-9]+(?:[\s\.-]?[A-Z0-9]+)*)/iu', $line, $matches)) {
+                $identifier = preg_replace('/[^A-Za-z0-9]/', '', $matches[1]);
+                if ('' !== $identifier) {
+                    return strtoupper($identifier);
+                }
+            }
+        }
+
+        return '';
     }
 }
