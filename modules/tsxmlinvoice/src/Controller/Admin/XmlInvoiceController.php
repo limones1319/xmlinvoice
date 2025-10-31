@@ -13,34 +13,89 @@ use DOMDocument;
 use Order;
 use OrderInvoice;
 use State;
+use PrestaShopBundle\Controller\Admin\FrameworkBundleAdminController;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Tools;
+use Validate;
 
-class XmlInvoiceController
+class XmlInvoiceController extends FrameworkBundleAdminController
 {
+    /**
+     * Route target: /modules/tsxmlinvoice/generate/{id}
+     * Serves the XML with proper headers.
+     */
+    public function generate(int $orderId): Response
+    {
+        $id_order = (int) $orderId;
+        if ($id_order <= 0) {
+            throw new NotFoundHttpException('Order ID is required.');
+        }
+
+        // Optional: secure with a permission if you have one configured
+        $this->denyAccessUnlessGranted('read', 'AdminTsXmlInvoice');
+
+        $order = new Order($id_order);
+        if (!Validate::isLoadedObject($order)) {
+            throw new NotFoundHttpException('Order not found.');
+        }
+
+        $xml = $this->buildUbl($order);
+        $filename = sprintf('invoice-%s.xml', preg_replace('/[^A-Za-z0-9_-]/', '', (string)$order->reference));
+
+        $response = new Response($xml);
+        $response->headers->set('Content-Type', 'application/xml; charset=utf-8');
+        $response->headers->set('Content-Disposition', 'attachment; filename="'.$filename.'"');
+
+        return $response;
+    }
+
+    /**
+     * Backward-compat: returns only the XML string (no Response wrapper).
+     * You can keep old code that might still call this.
+     */
     public function generateInvoiceXml($orderId)
     {
-        $context = Context::getContext();
+        $id_order = (int) $orderId;
+        $order = new Order($id_order);
+        if (!\Validate::isLoadedObject($order)) {
+            throw new \Symfony\Component\HttpKernel\Exception\NotFoundHttpException('Order not found.');
+        }
+        return $this->buildUbl($order);
+    }
 
-        /** @var Order $order */
-        $order = new Order((int)$orderId);
-        if (!Validate::isLoadedObject($order)) {
-            throw new \Exception('Order not found');
+    private function buildUbl(Order $order)
+    {
+        $currency = new Currency((int)$order->id_currency);
+        $invoiceDate = $order->invoice_date ?: $order->date_add;
+        $dueDate = $order->due_date ?? $invoiceDate;
+
+        $invoiceNumber = null;
+        $firstInvoice = null;
+        if ($order->hasInvoice()) {
+            $invoices = $order->getInvoicesCollection();
+            if ($invoices && $invoices->count()) {
+                foreach ($invoices as $inv) { $firstInvoice = $inv; break; }
+                if ($firstInvoice instanceof OrderInvoice) {
+                    $invoiceNumber = (string)$firstInvoice->getInvoiceNumberFormatted(Context::getContext()->language_id, $order->id_shop);
+                    $invoiceDate = $firstInvoice->date_add ?: $invoiceDate;
+                }
+            }
         }
 
         $shopAddress = null;
         if (method_exists('Address', 'initialize')) {
-            // PS 1.7 way to get shop address
             $shopAddress = Address::initialize((int)Configuration::get('PS_SHOP_ADDR1') ? (int) Configuration::get('PS_SHOP_ADDRESS_ID') : 0, true);
         } else {
             $shopAddress = new Address((int) Configuration::get('PS_SHOP_ADDRESS_ID'));
         }
 
-        // VAT/CIF now parsed from PS_SHOP_DETAILS (fallback to old module fields)
         $vatCif = $this->getShopVatAndCif();
-        $supplierVat = $vatCif['vat'];                // e.g., RO33913238
-        $supplierRegistration = $vatCif['registration']; // numeric CIF e.g., 33913238
+        $supplierVat = $vatCif['vat'];                // e.g. RO33913238
+        $supplierRegistration = $vatCif['registration']; // numeric e.g. 33913238
 
         $tradingName = (string) Configuration::get('PS_SHOP_NAME');
+
         $legalName = '';
         if ($shopAddress && !empty($shopAddress->company)) {
             $legalName = trim((string) $shopAddress->company);
@@ -49,20 +104,19 @@ class XmlInvoiceController
             $legalName = $tradingName;
         }
 
-        // Build supplier address from config with fallbacks to PS defaults
+        // Build supplier address
         $supplierStreet = trim((string) Configuration::get('TS_XMLINVOICE_SUPPLIER_STREET'));
         $supplierAdditionalStreet = trim((string) Configuration::get('TS_XMLINVOICE_SUPPLIER_STREET2'));
         $supplierCity = trim((string) Configuration::get('TS_XMLINVOICE_SUPPLIER_CITY'));
         $supplierPostcode = trim((string) Configuration::get('TS_XMLINVOICE_SUPPLIER_POSTCODE'));
         $supplierState = '';
         $supplierCountry = trim((string) Configuration::get('TS_XMLINVOICE_SUPPLIER_COUNTRY'));
-
         if ($shopAddress) {
             if ($supplierStreet === '' && !empty($shopAddress->address1)) {
-                $supplierStreet = (string)$shopAddress->address1;
+                $supplierStreet = (string)$shopAddress->address1;       // address1
             }
             if ($supplierAdditionalStreet === '' && !empty($shopAddress->address2)) {
-                $supplierAdditionalStreet = (string)$shopAddress->address2;
+                $supplierAdditionalStreet = (string)$shopAddress->address2; // address2
             }
             if ($supplierCity === '' && !empty($shopAddress->city)) {
                 $supplierCity = (string)$shopAddress->city;
@@ -77,7 +131,6 @@ class XmlInvoiceController
                 $supplierCountry = (string) Country::getIsoById((int)$shopAddress->id_country);
             }
         }
-
         if ($supplierStreet === '') {
             $supplierStreet = (string) Configuration::get('PS_SHOP_ADDR1');
         }
@@ -98,34 +151,13 @@ class XmlInvoiceController
         }
 
         $supplierAddressData = [
-            'street' => $supplierStreet,
-            'additionalStreet' => $supplierAdditionalStreet,
+            'street' => $supplierStreet,                 // address1
+            'additionalStreet' => $supplierAdditionalStreet, // address2
             'city' => $supplierCity,
             'postcode' => $supplierPostcode,
             'state' => $supplierState,
             'countryCode' => $supplierCountry,
         ];
-
-        $currency = new Currency((int)$order->id_currency);
-        $invoiceDate = $order->invoice_date ?: $order->date_add;
-        $dueDate = $order->due_date ?? $invoiceDate;
-
-        $invoiceNumber = null;
-        $firstInvoice = null;
-        if ($order->hasInvoice()) {
-            $invoices = $order->getInvoicesCollection();
-            if ($invoices && $invoices->count()) {
-                /** @var OrderInvoice $inv */
-                foreach ($invoices as $inv) {
-                    $firstInvoice = $inv;
-                    break;
-                }
-                if ($firstInvoice instanceof OrderInvoice) {
-                    $invoiceNumber = (string)$firstInvoice->getInvoiceNumberFormatted($context->language_id, $order->id_shop);
-                    $invoiceDate = $firstInvoice->date_add ?: $invoiceDate;
-                }
-            }
-        }
 
         $doc = new DOMDocument('1.0', 'UTF-8');
         $doc->preserveWhiteSpace = false;
@@ -154,7 +186,6 @@ class XmlInvoiceController
         $customer = new Customer((int)$order->id_customer);
         $invoiceAddress = new Address((int)$order->id_address_invoice);
 
-        // One BuyerReference only
         $invoice->appendChild($this->createTextElement($doc, 'cbc:BuyerReference', (string)$customer->id));
 
         $supplierParty = $doc->createElement('cac:AccountingSupplierParty');
@@ -165,7 +196,8 @@ class XmlInvoiceController
         $customerParty->appendChild($this->buildCustomerParty($doc, $invoiceAddress, $customer));
         $invoice->appendChild($customerParty);
 
-        // Taxes
+        // (Taxe + Totaluri + Linii) - neschimbate față de versiunea ta anterioară
+        // --- Taxe ---
         $taxData = $this->buildTaxData($order);
         $taxTotal = $doc->createElement('cac:TaxTotal');
         $taxTotal->appendChild($this->createAmountElement($doc, 'cbc:TaxAmount', $taxData['total'], $currency->iso_code));
@@ -174,7 +206,7 @@ class XmlInvoiceController
         }
         $invoice->appendChild($taxTotal);
 
-        // Totals
+        // --- Totaluri ---
         $legalMonetaryTotal = $doc->createElement('cac:LegalMonetaryTotal');
         $legalMonetaryTotal->appendChild($this->createAmountElement($doc, 'cbc:LineExtensionAmount', $taxData['taxable_total'], $currency->iso_code));
         $legalMonetaryTotal->appendChild($this->createAmountElement($doc, 'cbc:TaxExclusiveAmount', $taxData['taxable_total'], $currency->iso_code));
@@ -182,7 +214,7 @@ class XmlInvoiceController
         $legalMonetaryTotal->appendChild($this->createAmountElement($doc, 'cbc:PayableAmount', $taxData['inclusive_total'], $currency->iso_code));
         $invoice->appendChild($legalMonetaryTotal);
 
-        // Lines
+        // --- Linii ---
         foreach ($order->getProducts() as $detail) {
             $invoice->appendChild($this->buildInvoiceLine($doc, $detail, $currency->iso_code));
         }
@@ -195,7 +227,6 @@ class XmlInvoiceController
         $party = $doc->createElement('cac:Party');
 
         if ($vat) {
-            // EndpointID with VAT
             $endpoint = $doc->createElement('cbc:EndpointID');
             $endpoint->appendChild($doc->createTextNode($vat));
             $endpoint->setAttribute('schemeID', 'VAT');
@@ -203,7 +234,7 @@ class XmlInvoiceController
         }
 
         $displayName = $tradingName ?: $legalName;
-        // Per request: use address1 (supplierAddress.street) as PartyName/Name
+        // Per cerință: PartyName/Name = address1 (linia "street" din address)
         $partyNameValue = isset($address['street']) && $address['street'] !== '' ? $address['street'] : ($legalName ?: $displayName);
         if ($partyNameValue !== '') {
             $partyName = $doc->createElement('cac:PartyName');
@@ -212,10 +243,9 @@ class XmlInvoiceController
         }
 
         $postalAddress = $doc->createElement('cac:PostalAddress');
-        // Per request: StreetName must be address2 (additionalStreet)
+        // Per cerință: StreetName = address2; AdditionalStreetName = address1
         $postalAddress->appendChild($this->createTextElement($doc, 'cbc:StreetName', $address['additionalStreet'] ?? ''));
-        if (!empty($address['additionalStreet']) || !empty($address['street'])) {
-            // Keep address1 as AdditionalStreetName so it's still visible in address block
+        if (!empty($address['street']) || !empty($address['additionalStreet'])) {
             $postalAddress->appendChild($this->createTextElement($doc, 'cbc:AdditionalStreetName', $address['street'] ?? ''));
         }
         $postalAddress->appendChild($this->createTextElement($doc, 'cbc:CityName', $address['city'] ?? ''));
@@ -224,12 +254,12 @@ class XmlInvoiceController
             $postalAddress->appendChild($this->createTextElement($doc, 'cbc:CountrySubentity', $address['state']));
         }
         $country = $doc->createElement('cac:Country');
-        // IdentificationCode is ISO 3166-1 Alpha-2 (e.g., RO), not CIF
+        // UBL cere codul țării ISO-3166 alpha-2 aici (RO), nu CIF
         $country->appendChild($this->createTextElement($doc, 'cbc:IdentificationCode', $address['countryCode'] ?? ''));
         $postalAddress->appendChild($country);
         $party->appendChild($postalAddress);
 
-        // VAT id in PartyTaxScheme/CompanyID (usually "RO{CIF}")
+        // VAT în PartyTaxScheme/CompanyID (ex. "RO33913238")
         $partyTaxScheme = $doc->createElement('cac:PartyTaxScheme');
         if ($vat) {
             $partyTaxScheme->appendChild($this->createTextElement($doc, 'cbc:CompanyID', $vat));
@@ -239,11 +269,10 @@ class XmlInvoiceController
         $partyTaxScheme->appendChild($taxScheme);
         $party->appendChild($partyTaxScheme);
 
-        // Legal entity name and numeric CompanyID (CIF)
+        // Entitatea legală: nume + CompanyID numeric (CIF fără "RO")
         $partyLegalEntity = $doc->createElement('cac:PartyLegalEntity');
         $partyLegalEntity->appendChild($this->createTextElement($doc, 'cbc:RegistrationName', $legalName ?: $displayName));
         if ($registration) {
-            // Here we ensure numeric CIF (no RO prefix)
             $partyLegalEntity->appendChild($this->createTextElement($doc, 'cbc:CompanyID', $registration));
         }
         $party->appendChild($partyLegalEntity);
@@ -275,8 +304,6 @@ class XmlInvoiceController
         $postalAddress->appendChild($country);
         $party->appendChild($postalAddress);
 
-        // (Optional) add buyer VAT here if ai nevoie
-
         return $party;
     }
 
@@ -286,7 +313,7 @@ class XmlInvoiceController
         $totalTax = 0.0;
 
         foreach ($order->getProducts() as $detail) {
-            $rate = (float)$detail['rate'] ?? 0.0;
+            $rate = (float)($detail['rate'] ?? 0.0);
             $excl = (float)$detail['total_price_tax_excl'];
             $incl = (float)$detail['total_price_tax_incl'];
             $tax  = max(0.0, $incl - $excl);
@@ -313,7 +340,7 @@ class XmlInvoiceController
             $subtotals[$rate]['tax']     += $tax;
         }
 
-        foreach ($subtotals as $rate => $arr) {
+        foreach ($subtotals as $arr) {
             $totalTax += $arr['tax'];
         }
 
@@ -380,8 +407,8 @@ class XmlInvoiceController
         $item->appendChild($this->createTextElement($doc, 'cbc:Name', (string)$detail['product_name']));
 
         $taxCategory = $doc->createElement('cac:ClassifiedTaxCategory');
-        $taxCategory->appendChild($this->createTextElement($doc, 'cbc:ID', ((float)$detail['rate'] ?? 0.0) > 0 ? 'S' : 'Z'));
-        $taxCategory->appendChild($this->createTextElement($doc, 'cbc:Percent', (string)((float)$detail['rate'] ?? 0.0)));
+        $taxCategory->appendChild($this->createTextElement($doc, 'cbc:ID', ((float)($detail['rate'] ?? 0.0)) > 0 ? 'S' : 'Z'));
+        $taxCategory->appendChild($this->createTextElement($doc, 'cbc:Percent', (string)((float)($detail['rate'] ?? 0.0))));
 
         $taxScheme = $doc->createElement('cac:TaxScheme');
         $taxScheme->appendChild($this->createTextElement($doc, 'cbc:ID', 'VAT'));
@@ -398,9 +425,14 @@ class XmlInvoiceController
         return $line;
     }
 
+    private function formatAmount($amount)
+    {
+        return number_format((float)$amount, 2, '.', '');
+    }
+
     /**
-     * Extract VAT (RO+number) and CIF/CompanyID (number) from PS_SHOP_DETAILS,
-     * fall back to TS_XMLINVOICE_* if needed.
+     * Extract VAT (RO+number) and CIF (number) from PS_SHOP_DETAILS,
+     * fallback to TS_XMLINVOICE_* if needed.
      */
     private function getShopVatAndCif(): array
     {
@@ -429,19 +461,19 @@ class XmlInvoiceController
             $cif = (string) Configuration::get('TS_XMLINVOICE_SUPPLIER_REGISTRATION');
         }
 
-        // Normalize/sanitize VAT & CIF (avoid 'RO' alone)
-        $vat = strtoupper(trim((string)$vat));
-        if (preg_match('/^RO\s*$/i', $vat)) {
-            $vat = '';
-        }
-        // If we only have numeric VAT, prefix with RO
-        if ($vat !== '' && preg_match('/^[0-9]{2,12}$/', $vat)) {
+        // Normalize/sanitize
+        if ($vat && !preg_match('/^RO/i', $vat) && preg_match('/^[0-9]{2,12}$/', $vat)) {
             $vat = 'RO' . $vat;
         }
-        // Keep CIF numeric only
+        // avoid plain "RO"
+        if (preg_match('/^RO\s*$/i', (string)$vat)) {
+            $vat = '';
+        }
+        // derive CIF from VAT if needed
         if ($cif === '' && preg_match('/^RO\s*([0-9]{2,12})$/i', (string)$vat, $m2)) {
             $cif = $m2[1];
         }
+        // derive VAT from CIF if VAT missing
         if ($vat === '' && $cif !== '') {
             $vat = 'RO' . $cif;
         }
