@@ -172,9 +172,10 @@ class XmlInvoiceController extends FrameworkBundleAdminController
         $invoice->appendChild($legalMonetaryTotal);
 
         // Linii
+        $billingPeriodStr = $this->getBillingPeriodString($firstInvoice ?? null, $order->date_add);
         $lineNo = 1;
         foreach ($order->getProducts() as $detail) {
-            $invoice->appendChild($this->buildInvoiceLine($doc, $detail, $currency->iso_code, $lineNo++));
+            $invoice->appendChild($this->buildInvoiceLine($doc, $detail, $currency->iso_code, $lineNo++, $billingPeriodStr));
         }
 
         return $doc->saveXML();
@@ -386,7 +387,7 @@ class XmlInvoiceController extends FrameworkBundleAdminController
         return $el;
     }
 
-    private function buildInvoiceLine(DOMDocument $doc, array $detail, string $currencyIso, int $lineNo)
+    private function buildInvoiceLine(DOMDocument $doc, array $detail, string $currencyIso, int $lineNo, string $appendName = '')
     {
         $line = $doc->createElement('cac:InvoiceLine');
         $line->appendChild($this->createTextElement($doc, 'cbc:ID', (string)$lineNo));
@@ -396,7 +397,11 @@ class XmlInvoiceController extends FrameworkBundleAdminController
         $line->appendChild($this->createAmountElement($doc, 'cbc:LineExtensionAmount', (float)$detail['total_price_tax_excl'], $currencyIso));
 
         $item = $doc->createElement('cac:Item');
-        $item->appendChild($this->createTextElement($doc, 'cbc:Name', (string)$detail['product_name']));
+        $prodName = (string)$detail['product_name'];
+        if ($appendName !== '') {
+            $prodName .= ' ' . $appendName;
+        }
+        $item->appendChild($this->createTextElement($doc, 'cbc:Name', $prodName));
 
         $taxCategory = $doc->createElement('cac:ClassifiedTaxCategory');
         $rate = (float)($detail['rate'] ?? 0.0);
@@ -446,6 +451,53 @@ class XmlInvoiceController extends FrameworkBundleAdminController
     private function formatAmount($amount)
     {
         return number_format((float)$amount, 2, '.', '');
+    }
+
+    /**
+     * Calculates the billing period string (same logic as in invoice.product-tab.tpl).
+     * Format: "Perioada facturată: dd.mm.YYYY – dd.mm.YYYY"
+     */
+    private function getBillingPeriodString(?OrderInvoice $invoice, $orderDate): string
+    {
+        $start = null;
+        $end = null;
+
+        // Try to get from invoice properties (added by other modules)
+        if ($invoice) {
+            if (!empty($invoice->ts_period_start)) { $start = $invoice->ts_period_start; }
+            if (!empty($invoice->ts_period_end)) { $end = $invoice->ts_period_end; }
+        }
+
+        // Fallback: derive from order date
+        if (!$start || !$end) {
+            $baseDate = $orderDate;
+            if ($baseDate) {
+                // Determine start
+                if ($baseDate instanceof DateTime) {
+                    $startObj = clone $baseDate;
+                } else {
+                    $startObj = new DateTime($baseDate);
+                }
+                
+                // Determine end: +1 month -1 day
+                $endObj = clone $startObj;
+                $endObj->modify('+1 month');
+                $endObj->modify('-1 day');
+
+                $start = $startObj->format('Y-m-d');
+                $end = $endObj->format('Y-m-d');
+            }
+        }
+
+        if ($start && $end) {
+            $s = new DateTime($start);
+            $e = new DateTime($end);
+            // Use static string for "Perioada facturată" (could be translated via $this->l but context is admin controller)
+            // matching the PDF template text.
+            return 'Perioada facturată: ' . $s->format('d.m.Y') . ' – ' . $e->format('d.m.Y');
+        }
+
+        return '';
     }
 
     /** Întoarce codul ISO (2 litere) al state-ului PS (ex. IF, B) sau '' */
