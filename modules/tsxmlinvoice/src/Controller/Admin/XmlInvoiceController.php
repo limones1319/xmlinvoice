@@ -397,11 +397,27 @@ class XmlInvoiceController extends FrameworkBundleAdminController
         $line->appendChild($this->createAmountElement($doc, 'cbc:LineExtensionAmount', (float)$detail['total_price_tax_excl'], $currencyIso));
 
         $item = $doc->createElement('cac:Item');
-        $prodName = (string)$detail['product_name'];
-        if ($appendName !== '') {
-            $prodName .= ' ' . $appendName;
+        
+        $fullName = (string)$detail['product_name'];
+        $truncatedName = mb_substr($fullName, 0, 100, 'UTF-8');
+
+        // Use cbc:Description for full details + billing period if needed
+        $descriptionParts = [];
+        if ($fullName !== $truncatedName) {
+            $descriptionParts[] = $fullName;
         }
-        $item->appendChild($this->createTextElement($doc, 'cbc:Name', $prodName));
+        if ($appendName !== '') {
+            $descriptionParts[] = $appendName;
+        }
+
+        // IMPORTANT: cbc:Description MUST appear before cbc:Name in UBL 2.1 cac:Item
+        if (!empty($descriptionParts)) {
+            $descText = implode(' ', $descriptionParts);
+            $item->appendChild($this->createTextElement($doc, 'cbc:Description', $descText));
+        }
+
+        // BR-RO-L100: cbc:Name max 100 chars.
+        $item->appendChild($this->createTextElement($doc, 'cbc:Name', $truncatedName));
 
         $taxCategory = $doc->createElement('cac:ClassifiedTaxCategory');
         $rate = (float)($detail['rate'] ?? 0.0);
