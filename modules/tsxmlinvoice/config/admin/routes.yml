@@ -1,1 +1,6 @@
-# Route is defined in modules/tsxmlinvoice/config/routes.yml so both the Symfony and legacy routers can load it.
+tsxmlinvoice_generate:
+  path: /modules/tsxmlinvoice/generate/{invoiceId}
+  methods: [GET]
+  defaults:
+    _controller: 'tsxmlinvoice.controllers.admin.tsxmlinvoice:generateAction'
+    invoiceId: null
